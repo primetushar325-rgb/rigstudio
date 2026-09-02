@@ -4,6 +4,16 @@ Import a character image → key out the background → drop a **standard skelet
 top of it → every shipped animation just plays. 100% on-device: no backend, no
 AI/ML auto-rigging service, no network calls anywhere in the build.
 
+<p align="center">
+  <img src="preview/walk.gif" width="220" alt="walk cycle">
+  <img src="preview/wave.gif" width="220" alt="wave">
+  <img src="preview/idle.gif" width="220" alt="idle">
+</p>
+
+<p align="center"><em>Rendered by the app's own pipeline in <code>flutter test</code> — demo character, chroma-keyed, auto-cut into 14 parts, animated with the shipped clips.</em></p>
+
+<p align="center"><img src="preview/filmstrip_walk.png" width="760" alt="walk filmstrip"></p>
+
 Verified with Flutter **3.47.2 / Dart 3.13.2**. `flutter analyze` is clean and
 `flutter test` runs the *entire* pipeline headlessly (chroma key → auto-cut →
 FK render → GIF encode), writing real artefacts to `preview/`.

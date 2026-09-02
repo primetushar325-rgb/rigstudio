@@ -8,8 +8,8 @@ build/
 .idea/
 .vscode/
 
-# --- generated preview artefacts (regenerate with: flutter test) ---
-preview/
+# --- build outputs (APK is attached to GitHub Releases instead) ---
+dist/
 
 # --- Android ---
 android/.gradle/
