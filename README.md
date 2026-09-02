@@ -47,6 +47,37 @@ template align, auto-cut, playback, export) is testable immediately.
 
 ---
 
+## Install the APK
+
+`dist/rigstudio-v0.1.0-universal-release.apk` (54 MB, arm64-v8a + armeabi-v7a +
+x86_64, `com.rigstudio.rigstudio`, targetSdk 36) is a ready-to-sideload build.
+
+```bash
+adb install -r dist/rigstudio-v0.1.0-universal-release.apk
+# or copy it to the phone and open it (allow "install unknown apps")
+```
+
+> **Signing:** like every stock Flutter release build with no `key.properties`,
+> this APK is signed with the Android *debug* certificate — fine for sideloading
+> and testing, **not** publishable to Play. To ship, create a keystore, add
+> `android/key.properties`, and point `signingConfigs.release` at it in
+> `android/app/build.gradle.kts`.
+
+Rebuild it yourself with:
+
+```bash
+flutter build apk --release            # universal
+flutter build apk --release --split-per-abi   # smaller per-ABI APKs
+flutter build appbundle --release      # Play Store .aab
+```
+
+The committed `android/gradle.properties` is tuned for low-memory machines
+(900 MB heap, no daemon, single worker). On a real dev box raise
+`org.gradle.jvmargs` to `-Xmx4g` and set `org.gradle.daemon=true` for much
+faster rebuilds.
+
+---
+
 ## Architecture
 
 ```
