@@ -1,0 +1,46 @@
+name: rigstudio
+description: >-
+  On-device 2D character rigging & animation studio. Import a character PNG,
+  chroma-key the background, align a standard skeleton (or lasso-cut parts by
+  hand), then play hand-authored animation clips and export them.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # --- state ---
+  flutter_riverpod: ^2.5.1
+
+  # --- math (Matrix4 for the FK chain; also a Flutter transitive dep) ---
+  vector_math: ^2.4.0
+
+  # --- imaging / pixels ---
+  image: ^4.2.0
+
+  # --- io ---
+  image_picker: ^1.1.2
+  path_provider: ^2.1.4
+  path: ^1.9.0
+  share_plus: ^13.0.0
+
+  # --- saving exports to the device gallery ---
+  gal: ^2.3.0
+
+  # NOTE (export/mp4): the GIF encoder in `image` covers the free tier and has
+  # zero native weight. To add H.264 mp4 export, uncomment the line below and
+  # implement ExportService.encodeMp4 (see lib/services/export_service.dart).
+  # The original `ffmpeg_kit_flutter` package is retired; use the community fork:
+  # ffmpeg_kit_flutter_new: ^1.6.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
