@@ -27,6 +27,7 @@ class RigPreview extends StatefulWidget {
     this.selectedBoneId,
     this.facing = FacingDirection.right,
     this.motion,
+    this.propImages = const <String, ui.Image>{},
     this.onTime,
   });
 
@@ -41,6 +42,7 @@ class RigPreview extends StatefulWidget {
   final String? selectedBoneId;
   final FacingDirection facing;
   final PlaybackMotion? motion;
+  final Map<String, ui.Image> propImages;
   final ValueChanged<double>? onTime;
 
   @override
@@ -163,6 +165,8 @@ class _RigPreviewState extends State<RigPreview>
                     selectedBoneId: widget.selectedBoneId,
                     facing: widget.facing,
                     translateX: translateX,
+                    props: widget.skeleton.props,
+                    propImages: widget.propImages,
                   ),
                   size: Size(constraints.maxWidth, constraints.maxHeight),
                 );

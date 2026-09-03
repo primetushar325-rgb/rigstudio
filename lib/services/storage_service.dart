@@ -99,6 +99,21 @@ class StorageService {
     return path;
   }
 
+  Future<String> writeProp(String characterId, String propId, Uint8List pngBytes) async {
+    final dir = await characterDir(characterId);
+    final props = Directory(p.join(dir.path, 'props'));
+    if (!props.existsSync()) props.createSync(recursive: true);
+    final path = p.join(props.path, '$propId.png');
+    await File(path).writeAsBytes(pngBytes, flush: true);
+    return path;
+  }
+
+  Future<void> deletePropFile(String characterId, String propId) async {
+    final dir = await characterDir(characterId);
+    final f = File(p.join(dir.path, 'props', '$propId.png'));
+    if (f.existsSync()) f.deleteSync();
+  }
+
   Future<String> writeThumbnail(String characterId, Uint8List pngBytes) async {
     final dir = await characterDir(characterId);
     final path = p.join(dir.path, 'thumb.png');

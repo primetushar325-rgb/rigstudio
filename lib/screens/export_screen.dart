@@ -52,6 +52,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     final result = await ExportService.export(
       skeleton: skeleton,
       images: editor.partImages,
+      propImages: editor.propImages,
       clip: widget.clip,
       settings: _settings,
       characterName: editor.character?.name ?? 'character',

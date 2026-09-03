@@ -92,6 +92,21 @@ faster rebuilds.
   The app's exact encode command was verified on a host ffmpeg to produce a real
   H.264 `ftyp` mp4.
 
+### Props / accessories
+- `PropAttachment` model: a transparent PNG attached to a bone with a local
+  offset / rotation / scale / z-order. Props are drawn under the bone's own world
+  matrix, so a stick on `hand_r` swings with the arm automatically and bone
+  rotation limits do **not** apply to them.
+- Stored on the `Skeleton` (so undo/redo + serialisation cover them), PNGs in a
+  `props/` folder per character. Whole-rig mirror reparents props to the swapped
+  bone, flips the horizontal offset and mirrors the bitmap (so a phone screen
+  doesn't come out backwards).
+- Built-in generated prop library (hat, glasses, stick, phone, bag) + a **Props**
+  panel (open from the Animate screen): live preview, add from library, re-parent
+  to any bone, mirror/visibility/delete, scale/rotation/X/Y-offset tuning.
+- Props composite into GIF/PNG/mp4 exports. `props_idle.png` in `preview/` shows a
+  demo character wearing a hat + glasses (rendered by the tests).
+
 ### Walk direction + on-screen movement
 - `FacingDirection { right, left }` + `PlaybackMotion`. Facing left mirrors the
   whole rig about its centre line (via a `playbackRootMatrix` passed into the FK

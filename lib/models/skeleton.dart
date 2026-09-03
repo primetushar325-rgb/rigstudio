@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'bone_part.dart';
 import 'geom_json.dart';
+import 'prop.dart';
 
 /// A flat list of [BonePart]s whose hierarchy is resolved through `parentId`.
 class Skeleton {
@@ -10,7 +11,8 @@ class Skeleton {
     required this.bones,
     required this.canvasSize,
     this.rigMirrored = false,
-  });
+    List<PropAttachment>? props,
+  }) : props = props ?? <PropAttachment>[];
 
   final String characterId;
   final List<BonePart> bones;
@@ -18,6 +20,9 @@ class Skeleton {
 
   /// Whole-rig left/right flip (see [mirroredRig]).
   final bool rigMirrored;
+
+  /// Wearable/held items attached to bones of this rig.
+  final List<PropAttachment> props;
 
   BonePart? byId(String id) {
     for (final b in bones) {
@@ -58,12 +63,17 @@ class Skeleton {
   List<BonePart> get missingParts =>
       bones.where((b) => b.required_ && !b.isCut).toList();
 
-  Skeleton copyWith({List<BonePart>? bones, Size? canvasSize, bool? rigMirrored}) =>
+  Skeleton copyWith(
+          {List<BonePart>? bones,
+          Size? canvasSize,
+          bool? rigMirrored,
+          List<PropAttachment>? props}) =>
       Skeleton(
         characterId: characterId,
         bones: bones ?? this.bones,
         canvasSize: canvasSize ?? this.canvasSize,
         rigMirrored: rigMirrored ?? this.rigMirrored,
+        props: props ?? this.props,
       );
 
   /// Whole-rig mirror: reflects every pivot/rect about the canvas centre line
@@ -101,7 +111,20 @@ class Skeleton {
         required_: b.required_,
       ));
     }
-    return copyWith(bones: result, rigMirrored: !rigMirrored);
+
+    // 3. mirror the props: move each to its bone's left/right counterpart (e.g.
+    // hand_r -> hand_l), flip the horizontal offset, and flip the prop bitmap so
+    // text/labels on e.g. a phone don't come out backwards.
+    final mirroredProps = props.map((pr) {
+      final newBone = swappedSideId(pr.attachedBoneId);
+      return pr.copyWith(
+        attachedBoneId: newBone,
+        localOffset: Offset(-pr.localOffset.dx, pr.localOffset.dy),
+        mirrored: !pr.mirrored,
+      );
+    }).toList();
+
+    return copyWith(bones: result, rigMirrored: !rigMirrored, props: mirroredProps);
   }
 
   /// `upper_arm_l` <-> `upper_arm_r`, everything else unchanged.
@@ -116,6 +139,7 @@ class Skeleton {
         'canvasSize': sizeToJson(canvasSize),
         'rigMirrored': rigMirrored,
         'bones': bones.map((b) => b.toJson()).toList(),
+        'props': props.map((p) => p.toJson()).toList(),
       };
 
   factory Skeleton.fromJson(Map<String, dynamic> j) => Skeleton(
@@ -124,6 +148,9 @@ class Skeleton {
         rigMirrored: j['rigMirrored'] as bool? ?? false,
         bones: (j['bones'] as List)
             .map((e) => BonePart.fromJson((e as Map).cast<String, dynamic>()))
+            .toList(),
+        props: (j['props'] as List? ?? const [])
+            .map((e) => PropAttachment.fromJson((e as Map).cast<String, dynamic>()))
             .toList(),
       );
 }

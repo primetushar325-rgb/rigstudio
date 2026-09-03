@@ -11,6 +11,7 @@ import '../widgets/rig_preview.dart';
 import 'export_screen.dart';
 import 'layers_screen.dart';
 import 'paywall_screen.dart';
+import 'props_panel.dart';
 
 /// Walk mode. Keeps the facing direction and the movement sign in lockstep so
 /// they can never disagree (facing right but moving left is impossible).
@@ -83,6 +84,12 @@ class _AnimateScreenState extends ConsumerState<AnimateScreen> {
             onPressed: () => setState(() => _showBones = !_showBones),
           ),
           IconButton(
+            tooltip: 'Props',
+            icon: const Icon(Icons.backpack_outlined),
+            onPressed: () => Navigator.push(
+                context, MaterialPageRoute(builder: (_) => const PropsPanel())),
+          ),
+          IconButton(
             tooltip: 'Layers & pivots',
             icon: const Icon(Icons.layers_outlined),
             onPressed: () => Navigator.push(
@@ -111,6 +118,7 @@ class _AnimateScreenState extends ConsumerState<AnimateScreen> {
                 showBones: _showBones,
                 facing: _facing,
                 motion: _motion,
+                propImages: editor.propImages,
               ),
             ),
           ),

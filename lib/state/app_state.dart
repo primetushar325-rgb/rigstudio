@@ -8,9 +8,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/standard_rig.dart';
 import '../models/bone_part.dart';
 import '../models/character.dart';
+import '../models/prop.dart';
 import '../models/skeleton.dart';
 import '../services/chroma_key_service.dart';
 import '../services/cut_service.dart';
+import '../services/prop_library.dart';
 import '../services/storage_service.dart';
 import 'history.dart';
 
@@ -139,6 +141,7 @@ class EditorState {
     this.workingImage,
     this.template,
     this.partImages = const {},
+    this.propImages = const {},
     this.selectedBoneId,
     this.busy = false,
     this.status,
@@ -157,6 +160,9 @@ class EditorState {
   /// Decoded bitmaps per bone id, ready for the painter.
   final Map<String, ui.Image> partImages;
 
+  /// Decoded bitmaps per prop id.
+  final Map<String, ui.Image> propImages;
+
   final String? selectedBoneId;
   final bool busy;
   final String? status;
@@ -174,6 +180,7 @@ class EditorState {
     ui.Image? workingImage,
     RigTemplateTransform? template,
     Map<String, ui.Image>? partImages,
+    Map<String, ui.Image>? propImages,
     String? selectedBoneId,
     bool clearSelection = false,
     bool? busy,
@@ -186,6 +193,7 @@ class EditorState {
         workingImage: workingImage ?? this.workingImage,
         template: template ?? this.template,
         partImages: partImages ?? this.partImages,
+        propImages: propImages ?? this.propImages,
         selectedBoneId: clearSelection ? null : (selectedBoneId ?? this.selectedBoneId),
         busy: busy ?? this.busy,
         status: status,
@@ -202,14 +210,19 @@ class EditorController extends Notifier<EditorState> {
   /// Undo/redo over the rig. Each entry is a deep-copied skeleton plus a shallow
   /// copy of the decoded part images, so joint/crop/layer/mirror changes are all
   /// reversible.
-  final History<(Skeleton, Map<String, ui.Image>)> _history = History();
+  final History<(Skeleton, Map<String, ui.Image>, Map<String, ui.Image>)> _history =
+      History();
 
   bool get canUndo => _history.canUndo;
   bool get canRedo => _history.canRedo;
 
-  (Skeleton, Map<String, ui.Image>) _snapNow() {
+  (Skeleton, Map<String, ui.Image>, Map<String, ui.Image>) _snapNow() {
     final skeleton = Skeleton.fromJson(state.character!.skeleton!.toJson());
-    return (skeleton, Map<String, ui.Image>.from(state.partImages));
+    return (
+      skeleton,
+      Map<String, ui.Image>.from(state.partImages),
+      Map<String, ui.Image>.from(state.propImages),
+    );
   }
 
   /// Records the current state so the next mutation can be undone. Call at the
@@ -233,7 +246,8 @@ class EditorController extends Notifier<EditorState> {
     if (snap != null) await _restoreSnapshot(snap);
   }
 
-  Future<void> _restoreSnapshot((Skeleton, Map<String, ui.Image>) snap) async {
+  Future<void> _restoreSnapshot(
+      (Skeleton, Map<String, ui.Image>, Map<String, ui.Image>) snap) async {
     final c = state.character;
     if (c == null) return;
     c.skeleton = Skeleton.fromJson(snap.$1.toJson());
@@ -241,6 +255,7 @@ class EditorController extends Notifier<EditorState> {
     state = state.copyWith(
       character: c,
       partImages: Map<String, ui.Image>.from(snap.$2),
+      propImages: Map<String, ui.Image>.from(snap.$3),
     );
     ref.read(libraryProvider.notifier).refresh();
   }
@@ -257,10 +272,16 @@ class EditorController extends Notifier<EditorState> {
       final im = await StorageService.loadUiImageFile(b.imagePath!);
       if (im != null) parts[b.id] = im;
     }
+    final props = <String, ui.Image>{};
+    for (final p in c.skeleton?.props ?? const <PropAttachment>[]) {
+      final im = await StorageService.loadUiImageFile(p.imagePath);
+      if (im != null) props[p.id] = im;
+    }
     state = state.copyWith(
       workingBytes: bytes,
       workingImage: image,
       partImages: parts,
+      propImages: props,
       template: c.skeleton == null
           ? RigTemplateTransform.fitTo(
               Size(image.width.toDouble(), image.height.toDouble()))
@@ -492,6 +513,77 @@ class EditorController extends Notifier<EditorState> {
     if (c == null) return;
     c.lastClip = clipName;
     await _storage.saveCharacter(c);
+  }
+
+  // ---------------------------------------------------------------------- props
+
+  /// Adds a built-in prop (generated transparent PNG) to the rig.
+  Future<void> addProp(String templateId) async {
+    final c = state.character;
+    final s = c?.skeleton;
+    if (c == null || s == null) return;
+    final id = '${templateId}_${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
+    _recordHistory();
+    final png = await generatePropPng(templateId);
+    final path = await _storage.writeProp(c.id, id, png);
+    final image = await StorageService.decodeUiImage(png);
+    final rigH = state.canvasSize.height;
+    final bone = defaultBoneForProp(templateId);
+    final lift = (bone == 'head') ? -rigH * 0.20 : rigH * 0.0; // raise headwear
+    final prop = PropAttachment(
+      id: id,
+      label: templateId,
+      imagePath: path,
+      attachedBoneId: bone,
+      localOffset: bone == 'head'
+          ? Offset(0, lift)
+          : (templateId == 'stick' ? Offset(rigH * 0.04, rigH * 0.04) : Offset(rigH * 0.06, 0)),
+      scale: 0.5, // generated art is ~512px; start half size
+    );
+    s.props.add(prop);
+    await _storage.saveCharacter(c);
+    state = state.copyWith(
+      character: c,
+      propImages: {...state.propImages, id: image},
+    );
+    ref.read(libraryProvider.notifier).refresh();
+  }
+
+  Future<void> removeProp(String propId) async {
+    final c = state.character;
+    final s = c?.skeleton;
+    if (c == null || s == null) return;
+    _recordHistory();
+    s.props.removeWhere((p) => p.id == propId);
+    await _storage.deletePropFile(c.id, propId);
+    final props = Map<String, ui.Image>.from(state.propImages)..remove(propId);
+    await _storage.saveCharacter(c);
+    state = state.copyWith(character: c, propImages: props);
+    ref.read(libraryProvider.notifier).refresh();
+  }
+
+  Future<void> updateProp(String propId, PropAttachment changes) async {
+    final s = state.character?.skeleton;
+    if (s == null) return;
+    final idx = s.props.indexWhere((p) => p.id == propId);
+    if (idx < 0) return;
+    s.props[idx] = changes;
+    await _persist();
+  }
+
+  /// Reparents a prop to [boneId] (keeps geometry; you re-fine-tune after).
+  Future<void> movePropToBone(String propId, String boneId) async {
+    final props = state.character?.skeleton?.props ?? const <PropAttachment>[];
+    PropAttachment? found;
+    for (final x in props) {
+      if (x.id == propId) found = x;
+    }
+    if (found == null) return;
+    _recordHistory();
+    final s = state.character!.skeleton!;
+    final idx = s.props.indexWhere((x) => x.id == propId);
+    s.props[idx] = found.copyWith(attachedBoneId: boneId);
+    await _persist();
   }
 
   Future<void> _persist() async {

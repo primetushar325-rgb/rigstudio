@@ -90,6 +90,7 @@ class ExportService {
     required AnimationClip clip,
     required ExportSettings settings,
     required String characterName,
+    Map<String, ui.Image>? propImages,
     void Function(double progress, String stage)? onProgress,
     Directory? outputDirectory,
   }) async {
@@ -113,6 +114,7 @@ class ExportService {
       final image = await _renderFrame(
         skeleton: skeleton,
         images: images,
+        propImages: propImages,
         pose: clip.sample(t),
         bounds: bounds,
         outSize: Size(outW.toDouble(), outH.toDouble()),
@@ -352,6 +354,7 @@ class ExportService {
   static Future<ui.Image> _renderFrame({
     required Skeleton skeleton,
     required Map<String, ui.Image> images,
+    Map<String, ui.Image>? propImages,
     required Map<String, BonePose> pose,
     required Rect bounds,
     required Size outSize,
@@ -372,6 +375,8 @@ class ExportService {
       images: images,
       pose: pose,
       fit: false,
+      props: skeleton.props,
+      propImages: propImages ?? const <String, ui.Image>{},
     ).paint(canvas, bounds.size);
     canvas.restore();
 

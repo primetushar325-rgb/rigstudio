@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../data/standard_rig.dart';
 import '../models/animation_clip.dart';
+import '../models/bone_part.dart';
 import '../models/playback.dart';
+import '../models/prop.dart';
 import '../models/skeleton.dart';
 import 'fk.dart';
 
@@ -22,6 +24,8 @@ class RigPainter extends CustomPainter {
     this.padding = 12,
     this.facing = FacingDirection.right,
     this.translateX = 0,
+    this.props = const <PropAttachment>[],
+    this.propImages = const <String, ui.Image>{},
   });
 
   final Skeleton skeleton;
@@ -38,6 +42,12 @@ class RigPainter extends CustomPainter {
 
   /// Horizontal canvas-space translation (walk movement).
   final double translateX;
+
+  /// Wearable/held items to composite (from the rig's own props list).
+  final List<PropAttachment> props;
+
+  /// Decoded bitmaps for props, keyed by prop id.
+  final Map<String, ui.Image> propImages;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -73,35 +83,87 @@ class RigPainter extends CustomPainter {
 
     final paintImg = Paint()..filterQuality = FilterQuality.medium;
 
+    // Build a combined draw list so props interleave with body parts by z-order.
+    final drawList = <({int z, void Function() draw})>[];
     for (final bone in skeleton.drawOrder) {
       if (!bone.visible) continue;
       final m = world[bone.id];
       if (m == null) continue;
-
-      canvas.save();
-      canvas.transform(m.storage);
-
-      if (bone.mirrored) {
-        canvas.translate(bone.pivot.dx, 0);
-        canvas.scale(-1, 1);
-        canvas.translate(-bone.pivot.dx, 0);
-      }
-
-      final img = images[bone.id];
-      if (img != null && bone.imageRect != Rect.zero) {
-        canvas.drawImageRect(
-          img,
-          Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
-          bone.imageRect,
-          paintImg,
-        );
-      } else {
-        _drawStick(canvas, bone.id, bone.pivot);
-      }
-      canvas.restore();
+      drawList.add((z: bone.zIndex, draw: () {
+        canvas.save();
+        canvas.transform(m.storage);
+        if (bone.mirrored) {
+          canvas.translate(bone.pivot.dx, 0);
+          canvas.scale(-1, 1);
+          canvas.translate(-bone.pivot.dx, 0);
+        }
+        final img = images[bone.id];
+        if (img != null && bone.imageRect != Rect.zero) {
+          canvas.drawImageRect(
+            img,
+            Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+            bone.imageRect,
+            paintImg,
+          );
+        } else {
+          _drawStick(canvas, bone.id, bone.pivot);
+        }
+        canvas.restore();
+      }));
+    }
+    for (final prop in props) {
+      if (!prop.visible) continue;
+      final m = world[prop.attachedBoneId];
+      if (m == null) continue;
+      final bone = skeleton.byId(prop.attachedBoneId);
+      if (bone == null) continue;
+      final propImg = propImages[prop.id];
+      if (propImg == null) continue;
+      drawList.add((
+        z: prop.zIndex,
+        draw: () => _drawProp(canvas, propImg, prop, bone, m)
+      ));
+    }
+    drawList.sort((a, b) => a.z.compareTo(b.z));
+    for (final item in drawList) {
+      item.draw();
     }
 
     if (showBones) _drawBoneOverlay(canvas, world);
+    canvas.restore();
+  }
+
+  /// Draws a prop rigidly attached to a bone.
+  ///
+  /// The prop is drawn under the bone's world matrix so it inherits rotation/
+  /// translation automatically. Its anchor is `bone.pivot + localOffset` (canvas
+  /// pixels), and it can additionally rotate/scale/mirror about that anchor.
+  void _drawProp(Canvas canvas, ui.Image img, PropAttachment prop, BonePart bone,
+      Matrix4 boneWorld) {
+    // prop.mirrored already accounts for whole-rig mirroring (offset sign flipped
+    // at data level). The per-bone bitmap mirror is purely a texture fix and does
+    // not need to flip the prop.
+    final flip = prop.mirrored;
+    final anchorLocal = bone.pivot + prop.localOffset;
+
+    canvas.save();
+    canvas.transform(boneWorld.storage);
+
+    canvas.translate(anchorLocal.dx, anchorLocal.dy);
+    if (flip) canvas.scale(-1, 1);
+    canvas.scale(prop.scale.abs());
+    canvas.rotate(prop.localRotation * (flip ? -1 : 1));
+
+    // Draw centred on the anchor (we already translated there).
+    canvas.drawImageRect(
+      img,
+      Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+      Rect.fromCenter(
+          center: Offset.zero,
+          width: img.width.toDouble(),
+          height: img.height.toDouble()),
+      Paint()..filterQuality = FilterQuality.medium,
+    );
     canvas.restore();
   }
 
