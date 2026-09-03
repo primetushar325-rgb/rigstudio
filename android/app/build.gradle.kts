@@ -9,6 +9,14 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
+    // Lint is not used to gate CI/sideload builds (and its "vital release" pass
+    // crashes Flutter/Gradle on hosted runners). CI runs `flutter analyze` for
+    // static checks instead.
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
