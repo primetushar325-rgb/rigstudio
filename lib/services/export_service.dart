@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:gal/gal.dart';
@@ -63,10 +65,19 @@ class ExportSettings {
 }
 
 class ExportResult {
-  const ExportResult({required this.path, required this.format, required this.frames});
+  const ExportResult({
+    required this.path,
+    required this.format,
+    required this.frames,
+    this.note,
+  });
+
   final String path;
   final ExportFormat format;
   final int frames;
+
+  /// Human-readable warning (e.g. mp4 encoder unavailable, fell back to PNG).
+  final String? note;
 }
 
 /// Renders the rig frame by frame with a [ui.PictureRecorder] and encodes the
@@ -164,38 +175,125 @@ class ExportService {
               .writeAsBytes(png, flush: true);
         }
         final out = p.join(dir.path, '$base.mp4');
-        final ok = await encodeMp4(
-          framesDir: seqDir.path,
-          outputPath: out,
-          fps: settings.fps,
-        );
-        onProgress?.call(1.0, ok ? 'Done' : 'mp4 encoder unavailable');
-        return ExportResult(
-          path: ok ? out : seqDir.path,
-          format: ok ? ExportFormat.mp4 : ExportFormat.pngSequence,
-          frames: n,
-        );
+        onProgress?.call(0.8, 'Encoding MP4 (H.264)…');
+        try {
+          final log = await encodeMp4(
+            framesDir: seqDir.path,
+            outputPath: out,
+            fps: settings.fps,
+          );
+          // A real ffmpeg produced the video container. Validate the header
+          // before it is allowed anywhere near the gallery.
+          final file = File(out);
+          if (file.existsSync() && ExportService.isValidMediaFile(out, ExportFormat.mp4)) {
+            onProgress?.call(1.0, 'Done');
+            return ExportResult(
+              path: out,
+              format: ExportFormat.mp4,
+              frames: n,
+              note: log?.trim(),
+            );
+          }
+          file.deleteSync();
+          throw StateError('ffmpeg output was not a valid mp4');
+        } catch (e) {
+          // ffmpeg_kit native libs aren't available (e.g. test host or a build
+          // that didn't link them). Fall back to the PNG frames already written
+          // instead of shipping a mislabelled "mp4".
+          final msg = e.toString();
+          onProgress?.call(1.0, 'MP4 unavailable — kept PNG frames');
+          return ExportResult(
+            path: seqDir.path,
+            format: ExportFormat.pngSequence,
+            frames: n,
+            note: 'MP4 encode failed (${msg.length > 240 ? msg.substring(0, 240) : msg}). '
+                'PNG frame sequence saved instead.',
+          );
+        }
     }
   }
 
-  /// mp4 hook. Enable `ffmpeg_kit_flutter_new` in pubspec.yaml and replace the
-  /// body with:
-  ///
-  /// ```dart
-  /// final session = await FFmpegKit.execute(
-  ///   '-y -framerate $fps -i ${framesDir}/frame_%04d.png '
-  ///   '-c:v libx264 -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" '
-  ///   '$outputPath');
-  /// return ReturnCode.isSuccess(await session.getReturnCode());
-  /// ```
-  static Future<bool> encodeMp4({
+  /// Encodes a PNG frame sequence into an H.264 mp4 via ffmpeg_kit.
+  /// Returns the ffmpeg log on success; throws an [Exception] whose message
+  /// includes the ffmpeg log on failure.
+  static Future<String?> encodeMp4({
     required String framesDir,
     required String outputPath,
     required int fps,
-  }) async =>
-      false;
+  }) async {
+    final command = '-hide_banner -y '
+        '-framerate $fps '
+        '-i ${_q(framesDir)}/frame_%04d.png '
+        '-c:v libx264 -preset medium -crf 20 '
+        '-pix_fmt yuv420p -movflags +faststart '
+        '${_q(outputPath)}';
+    final session = await FFmpegKit.execute(command);
+    final rc = await session.getReturnCode();
+    if (!ReturnCode.isSuccess(rc)) {
+      String logs;
+      try {
+        logs = (await session.getAllLogsAsString()) ?? '';
+      } catch (_) {
+        logs = '';
+      }
+      throw Exception('ffmpeg failed (rc=${rc?.getValue()}):\n$logs');
+    }
+    return (await session.getAllLogsAsString()) ?? '';
+  }
+
+  /// True when [path] is a real, non-trivial file of the expected media
+  /// container. Stops a corrupt export ever reaching the gallery / share sheet
+  /// by checking file size + magic bytes.
+  static bool isValidMediaFile(String path, ExportFormat format) {
+    final f = File(path);
+    if (!f.existsSync()) return false;
+    if (f.lengthSync() < 64) return false;
+    List<int> head;
+    try {
+      final raf = f.openSync();
+      head = raf.readSync(12);
+      raf.closeSync();
+    } catch (_) {
+      return false;
+    }
+    if (head.isEmpty) return false;
+    return _matchesMagic(head, format);
+  }
+
+  static bool _matchesMagic(List<int> b, ExportFormat format) {
+    if (format == ExportFormat.gif) {
+      // GIF8
+      return b.length >= 3 && b[0] == 0x47 && b[1] == 0x49 && b[2] == 0x46;
+    }
+    if (format == ExportFormat.mp4) {
+      // ....ftyp
+      return b.length >= 8 && b[4] == 0x66 && b[5] == 0x74 && b[6] == 0x79 && b[7] == 0x70;
+    }
+    // \x89PNG
+    return b.length >= 8 &&
+        b[0] == 0x89 &&
+        b[1] == 0x50 &&
+        b[2] == 0x4E &&
+        b[3] == 0x47;
+  }
+
+  static String _q(String s) => "'${s.replaceAll("'", "\\'")}'";
+
+  /// True when the exported result is real and safe to Save / Share. Called by
+  /// the UI before it offers those buttons so a corrupt export never reaches the
+  /// gallery.
+  static bool isResultReady(ExportResult r) {
+    if (r.format == ExportFormat.pngSequence) {
+      final dir = Directory(r.path);
+      if (!dir.existsSync()) return false;
+    final files = dir.listSync().whereType<File>().where((f) => f.path.endsWith('.png'));
+    return files.isNotEmpty;
+  }
+    return isValidMediaFile(r.path, r.format);
+  }
 
   static Future<void> shareResult(ExportResult r) async {
+    if (!ExportService.isResultReady(r)) return; // never share a corrupt export
     if (r.format == ExportFormat.pngSequence) {
       final files = Directory(r.path)
           .listSync()
@@ -216,6 +314,7 @@ class ExportService {
   /// Saves to the device gallery. GIFs are not accepted by every platform's
   /// media store, in which case the caller should fall back to sharing.
   static Future<bool> saveToGallery(ExportResult r) async {
+    if (!ExportService.isResultReady(r)) return false; // never save a corrupt export
     try {
       if (r.format == ExportFormat.mp4) {
         await Gal.putVideo(r.path);

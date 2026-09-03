@@ -31,6 +31,7 @@ class CutService {
     required RigTemplateTransform transform,
     double bleed = 1.10,
     double featherPx = 2.0,
+    double alphaBlur = 1.4,
   }) async {
     final regions = <Map<String, dynamic>>[];
     for (final tb in kStandardRig) {
@@ -54,6 +55,7 @@ class CutService {
       'bytes': imageBytes,
       'regions': regions,
       'feather': featherPx,
+      'alphaBlur': alphaBlur,
     });
     return raw.map(_toResult).toList();
   }
@@ -64,11 +66,13 @@ class CutService {
     required String boneId,
     required List<Offset> polygon,
     double featherPx = 1.5,
+    double alphaBlur = 1.2,
   }) async {
     if (polygon.length < 3) return null;
     final raw = await compute(cutWorker, {
       'bytes': imageBytes,
       'feather': featherPx,
+      'alphaBlur': alphaBlur,
       'regions': [
         {
           'id': boneId,
@@ -102,6 +106,7 @@ List<Map<String, dynamic>> cutWorker(Map<String, dynamic> a) {
   if (src0 == null) return const [];
   final src = src0.numChannels < 4 ? src0.convert(numChannels: 4) : src0;
   final feather = (a['feather'] as num).toDouble();
+  final alphaBlur = (a['alphaBlur'] as num?)?.toDouble() ?? 1.4;
   final regions = (a['regions'] as List).cast<Map<String, dynamic>>();
 
   final out = <Map<String, dynamic>>[];
@@ -155,6 +160,7 @@ List<Map<String, dynamic>> cutWorker(Map<String, dynamic> a) {
     if (tr < 0) continue; // nothing but transparency here
 
     final trimmed = img.copyCrop(dst, x: tl, y: tt, width: tr - tl + 1, height: tb - tt + 1);
+    if (alphaBlur > 0.05) _blurAlphaChannel(trimmed, alphaBlur);
     out.add({
       'id': r['id'],
       'bytes': img.encodePng(trimmed),
@@ -296,5 +302,55 @@ class _PolygonMask extends _Mask {
     t = t.clamp(0.0, 1.0);
     final cx = ax + t * dx, cy = ay + t * dy;
     return math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+  }
+}
+
+/// Gaussian-blurs ONLY the alpha channel of [im] (RGB untouched). This softens
+/// the 1-2px edge a chroma-key or mask leaves behind, which removes the hard
+/// "green fringe" halo on the finished body part. Kept lightweight because it
+/// runs inside the cut isolate.
+void _blurAlphaChannel(img.Image im, double sigma) {
+  final w = im.width, h = im.height;
+  if (w < 3 || h < 3 || sigma <= 0) return;
+  final r = sigma.clamp(0.5, 2.0).ceil();
+  final n = r * 2 + 1;
+  final kernel = List<double>.filled(n, 0);
+  var sum = 0.0;
+  for (var i = -r; i <= r; i++) {
+    final g = math.exp(-(i * i) / (2 * sigma * sigma));
+    kernel[i + r] = g;
+    sum += g;
+  }
+  for (var i = 0; i < n; i++) {
+    kernel[i] /= sum;
+  }
+
+  final srcA = List<double>.generate(w * h, (i) => im.getPixel(i % w, i ~/ w).a.toDouble());
+  final tmp = List<double>.filled(w * h, 0);
+
+  // horizontal pass
+  for (var y = 0; y < h; y++) {
+    final row = y * w;
+    for (var x = 0; x < w; x++) {
+      var acc = 0.0;
+      for (var k = -r; k <= r; k++) {
+        final xx = (x + k).clamp(0, w - 1);
+        acc += srcA[row + xx] * kernel[k + r];
+      }
+      tmp[row + x] = acc;
+    }
+  }
+  // vertical pass
+  for (var x = 0; x < w; x++) {
+    for (var y = 0; y < h; y++) {
+      var acc = 0.0;
+      for (var k = -r; k <= r; k++) {
+        final yy = (y + k).clamp(0, h - 1);
+        acc += tmp[yy * w + x] * kernel[k + r];
+      }
+      final p = im.getPixel(x, y);
+      im.setPixelRgba(x, y, p.r.toInt(), p.g.toInt(), p.b.toInt(),
+          acc.round().clamp(0, 255));
+    }
   }
 }

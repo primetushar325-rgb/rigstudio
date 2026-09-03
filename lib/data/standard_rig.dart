@@ -285,6 +285,7 @@ Skeleton buildSkeletonFromTemplate({
 }) {
   final bones = <BonePart>[];
   for (final tb in kStandardRig) {
+    final lim = defaultAngleLimits(tb.id);
     bones.add(BonePart(
       id: tb.id,
       parentId: tb.parentId,
@@ -292,7 +293,35 @@ Skeleton buildSkeletonFromTemplate({
       pivot: transform.joint(tb.id),
       zIndex: tb.zIndex,
       required_: tb.required_,
+      minAngleRad: lim.$1,
+      maxAngleRad: lim.$2,
     ));
   }
   return Skeleton(characterId: characterId, bones: bones, canvasSize: canvasSize);
 }
+
+/// Default rotation limits (radians, clockwise-positive) per standard bone.
+///
+/// Deliberately wide enough that every shipped [AnimationClip] stays inside them
+/// (asserted in a unit test), but bounded so a user keyframe or live pose drag
+/// can't spin a limb through >~170° and visually "break" the joint. `torso` is
+/// left unbounded because the sleep clip lays the whole body down (−90°).
+const double _deg = 0.017453292519943295; // one degree in radians
+
+(double, double) defaultAngleLimits(String id) => switch (id) {
+      'torso' => (-double.infinity, double.infinity),
+      'head' => (-80 * _deg, 80 * _deg),
+      'upper_arm_l' => (-170 * _deg, 170 * _deg),
+      'upper_arm_r' => (-170 * _deg, 170 * _deg),
+      'forearm_l' => (-170 * _deg, 170 * _deg),
+      'forearm_r' => (-170 * _deg, 170 * _deg),
+      'hand_l' => (-100 * _deg, 100 * _deg),
+      'hand_r' => (-100 * _deg, 100 * _deg),
+      'thigh_l' => (-110 * _deg, 110 * _deg),
+      'thigh_r' => (-110 * _deg, 110 * _deg),
+      'shin_l' => (-170 * _deg, 170 * _deg),
+      'shin_r' => (-170 * _deg, 170 * _deg),
+      'foot_l' => (-45 * _deg, 45 * _deg),
+      'foot_r' => (-45 * _deg, 45 * _deg),
+      _ => (-double.infinity, double.infinity),
+    };

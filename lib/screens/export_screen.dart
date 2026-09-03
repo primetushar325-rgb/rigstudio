@@ -75,6 +75,8 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     final premium = ref.watch(settingsProvider).premium;
     final maxSeconds = premium ? 30.0 : Limits.freeMaxExportSeconds;
     final maxWidth = premium ? 1440 : Limits.freeMaxExportWidth;
+    // A corrupt export is never offered for Save/Share (magic-byte validated).
+    final resultReady = _result != null && ExportService.isResultReady(_result!);
 
     return Scaffold(
       appBar: AppBar(title: Text('Export · ${widget.clip.label}')),
@@ -85,7 +87,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
             segments: const [
               ButtonSegment(value: ExportFormat.gif, label: Text('GIF')),
               ButtonSegment(value: ExportFormat.pngSequence, label: Text('PNG seq')),
-              ButtonSegment(value: ExportFormat.mp4, label: Text('MP4')),
+              ButtonSegment(value: ExportFormat.mp4, label: Text('MP4 (Beta)')),
             ],
             selected: {_settings.format},
             onSelectionChanged: (s) {
@@ -103,6 +105,15 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
               setState(() => _settings = _settings.copyWith(format: f));
             },
           ),
+          if (_settings.format == ExportFormat.mp4)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'MP4 is Beta — it needs the on-device ffmpeg encoder linked. '
+                'GIF is the fully-verified default and always works.',
+                style: TextStyle(fontSize: 11, color: Color(0xFFFFC46B)),
+              ),
+            ),
           const SizedBox(height: 16),
           LabeledSlider(
             label: 'Duration',
@@ -177,7 +188,8 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.check_circle, color: Colors.greenAccent),
+                        Icon(resultReady ? Icons.check_circle : Icons.error_outline,
+                            color: resultReady ? Colors.greenAccent : Colors.orangeAccent),
                         const SizedBox(width: 8),
                         Text('${_result!.frames} frames exported',
                             style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -186,7 +198,13 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                     const SizedBox(height: 6),
                     Text(_result!.path,
                         style: const TextStyle(fontSize: 11, color: Colors.white38)),
-                    if (_result!.format == ExportFormat.gif &&
+                    if (_result!.note != null) ...[
+                      const SizedBox(height: 8),
+                      Text('Note: ${_result!.note}',
+                          style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                    ],
+                    if (resultReady &&
+                        _result!.format == ExportFormat.gif &&
                         File(_result!.path).existsSync()) ...[
                       const SizedBox(height: 12),
                       ClipRRect(
@@ -194,34 +212,45 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                         child: Image.file(File(_result!.path), height: 220),
                       ),
                     ],
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () async {
-                              final ok = await ExportService.saveToGallery(_result!);
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                content: Text(ok
-                                    ? 'Saved to gallery'
-                                    : 'Gallery rejected this format — try sharing'),
-                              ));
-                            },
-                            icon: const Icon(Icons.download),
-                            label: const Text('Save'),
-                          ),
+                    if (!resultReady)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          'This export did not pass validation (it may be corrupt). '
+                          'It has NOT been sent to the gallery — pick GIF and render again.',
+                          style: TextStyle(fontSize: 12, color: Colors.orangeAccent),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: () => ExportService.shareResult(_result!),
-                            icon: const Icon(Icons.ios_share),
-                            label: const Text('Share'),
+                      ),
+                    if (resultReady) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                final ok = await ExportService.saveToGallery(_result!);
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                  content: Text(ok
+                                      ? 'Saved to gallery'
+                                      : 'Gallery rejected this format — try sharing'),
+                                ));
+                              },
+                              icon: const Icon(Icons.download),
+                              label: const Text('Save'),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () => ExportService.shareResult(_result!),
+                              icon: const Icon(Icons.ios_share),
+                              label: const Text('Share'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -229,9 +258,10 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           ],
           const SizedBox(height: 24),
           const Text(
-            'GIF encodes fully on-device with the image package. MP4 needs the '
-            'ffmpeg dependency enabled in pubspec.yaml — see '
-            'ExportService.encodeMp4.',
+            'Every export is validated (file size + magic bytes) before it can '
+            'be saved or shared, so a corrupt file never reaches the gallery. '
+            'GIF encodes fully on-device via the image package and is the '
+            'recommended default.',
             style: TextStyle(fontSize: 11, color: Colors.white38),
           ),
         ],

@@ -23,6 +23,7 @@ class TemplateAlignScreen extends ConsumerStatefulWidget {
 class _TemplateAlignScreenState extends ConsumerState<TemplateAlignScreen> {
   bool _jointMode = false;
   bool _showRegions = true;
+  bool _symmetry = true; // editing one side mirrors to the other
   String? _grabbedJoint;
 
   // gesture start state
@@ -43,6 +44,21 @@ class _TemplateAlignScreenState extends ConsumerState<TemplateAlignScreen> {
             .updateTemplate(RigTemplateTransform.fitTo(editor.canvasSize));
       }
     });
+  }
+
+  /// Mirrored counterpart key for a side-limb joint (upper_arm_l <-> upper_arm_r,
+  /// hand_l#end <-> hand_r#end). Null for centred bones like torso/head.
+  static String? _counterpart(String key) {
+    final isEnd = key.endsWith('#end');
+    final base = isEnd ? key.substring(0, key.length - 4) : key;
+    String? cb;
+    if (base.endsWith('_l')) {
+      cb = '${base.substring(0, base.length - 2)}_r';
+    } else if (base.endsWith('_r')) {
+      cb = '${base.substring(0, base.length - 2)}_l';
+    }
+    if (cb == null) return null;
+    return isEnd ? '$cb#end' : cb;
   }
 
   String? _hitJoint(Offset canvasPoint, RigTemplateTransform t, double pxPerCanvas) {
@@ -124,8 +140,15 @@ class _TemplateAlignScreenState extends ConsumerState<TemplateAlignScreen> {
                             final focalCanvas = fit.toCanvas(d.localFocalPoint);
                             final t = template.clone();
                             if (_grabbedJoint != null) {
-                              t.jointTweaks[_grabbedJoint!] =
+                              final value =
                                   _startTweak + (focalCanvas - _startFocalCanvas);
+                              t.jointTweaks[_grabbedJoint!] = value;
+                              // Symmetry snap: mirroring an edit keeps the two
+                              // sides perfectly symmetrical as you drag one.
+                              if (_symmetry) {
+                                final cp = _counterpart(_grabbedJoint!);
+                                if (cp != null) t.jointTweaks[cp] = value;
+                              }
                             } else {
                               t.center = _startCenter + (focalCanvas - _startFocalCanvas);
                               t.scale = (_startScale * d.scale).clamp(40.0, 12000.0);
@@ -151,7 +174,9 @@ class _TemplateAlignScreenState extends ConsumerState<TemplateAlignScreen> {
             ),
             _Toolbar(
               jointMode: _jointMode,
+              symmetry: _symmetry,
               onJointMode: (v) => setState(() => _jointMode = v),
+              onSymmetry: (v) => setState(() => _symmetry = v),
               onConfirm: () async {
                 await notifier.commitTemplateAndAutoCrop();
                 if (!context.mounted) return;
@@ -169,12 +194,16 @@ class _TemplateAlignScreenState extends ConsumerState<TemplateAlignScreen> {
 class _Toolbar extends StatelessWidget {
   const _Toolbar({
     required this.jointMode,
+    required this.symmetry,
     required this.onJointMode,
+    required this.onSymmetry,
     required this.onConfirm,
   });
 
   final bool jointMode;
+  final bool symmetry;
   final ValueChanged<bool> onJointMode;
+  final ValueChanged<bool> onSymmetry;
   final VoidCallback onConfirm;
 
   @override
@@ -204,10 +233,22 @@ class _Toolbar extends StatelessWidget {
               selected: {jointMode},
               onSelectionChanged: (s) => onJointMode(s.first),
             ),
+            if (jointMode) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilterChip(
+                  avatar: const Icon(Icons.vertical_align_center, size: 16),
+                  label: const Text('Mirror both sides'),
+                  selected: symmetry,
+                  onSelected: onSymmetry,
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             Text(
               jointMode
-                  ? 'Drag any joint dot to fine-tune a limb.'
+                  ? 'Drag a joint dot to fine-tune a limb.'
                   : 'Drag to move · pinch to scale · twist to rotate.',
               style: const TextStyle(color: Colors.white54, fontSize: 12),
             ),

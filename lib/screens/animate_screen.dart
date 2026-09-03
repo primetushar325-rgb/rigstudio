@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/animation_library.dart';
 import '../models/animation_clip.dart';
+import '../models/playback.dart';
 import '../state/app_state.dart';
 import '../widgets/color_wheel_picker.dart';
 import '../widgets/common.dart';
@@ -10,6 +11,10 @@ import '../widgets/rig_preview.dart';
 import 'export_screen.dart';
 import 'layers_screen.dart';
 import 'paywall_screen.dart';
+
+/// Walk mode. Keeps the facing direction and the movement sign in lockstep so
+/// they can never disagree (facing right but moving left is impossible).
+enum _WalkMode { inPlace, left, right }
 
 /// Steps 7-8 — clip playback on the rigged character plus the background
 /// picker and duration trimmer.
@@ -26,6 +31,23 @@ class _AnimateScreenState extends ConsumerState<AnimateScreen> {
   double _speed = 1.0;
   double _trimSeconds = 3.0;
   bool _showBones = false;
+  _WalkMode _walkMode = _WalkMode.inPlace;
+
+  FacingDirection get _facing => _walkMode == _WalkMode.left
+      ? FacingDirection.left
+      : FacingDirection.right;
+
+  /// Driving motion for the preview. `null` (or in-place) keeps the character
+  /// centred for seamless loops.
+  PlaybackMotion? get _motion {
+    if (_walkMode == _WalkMode.inPlace) return null;
+    return PlaybackMotion(
+      facing: _facing,
+      walking: true,
+      inPlace: false,
+      walkSpeed: 150,
+    );
+  }
 
   @override
   void initState() {
@@ -87,6 +109,8 @@ class _AnimateScreenState extends ConsumerState<AnimateScreen> {
                 background: settings.previewBackground,
                 transparent: settings.transparentPreview,
                 showBones: _showBones,
+                facing: _facing,
+                motion: _motion,
               ),
             ),
           ),
@@ -123,6 +147,32 @@ class _AnimateScreenState extends ConsumerState<AnimateScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Facing + walk direction are driven together so they can't
+                  // mismatch (e.g. facing right but moving left).
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<_WalkMode>(
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment(
+                            value: _WalkMode.inPlace,
+                            icon: Icon(Icons.stop, size: 16),
+                            label: Text('In place')),
+                        ButtonSegment(
+                            value: _WalkMode.left,
+                            icon: Icon(Icons.arrow_back, size: 16),
+                            label: Text('Walk left')),
+                        ButtonSegment(
+                            value: _WalkMode.right,
+                            icon: Icon(Icons.arrow_forward, size: 16),
+                            label: Text('Walk right')),
+                      ],
+                      selected: {_walkMode},
+                      onSelectionChanged: (s) =>
+                          setState(() => _walkMode = s.first),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
                       IconButton.filledTonal(

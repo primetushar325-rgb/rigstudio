@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../data/standard_rig.dart';
 import '../models/animation_clip.dart';
+import '../models/playback.dart';
 import '../models/skeleton.dart';
 import 'fk.dart';
 
@@ -19,6 +20,8 @@ class RigPainter extends CustomPainter {
     this.selectedBoneId,
     this.fit = true,
     this.padding = 12,
+    this.facing = FacingDirection.right,
+    this.translateX = 0,
   });
 
   final Skeleton skeleton;
@@ -29,6 +32,12 @@ class RigPainter extends CustomPainter {
   final String? selectedBoneId;
   final bool fit;
   final double padding;
+
+  /// Horizontal facing. Left mirrors the whole rig about its centre line.
+  final FacingDirection facing;
+
+  /// Horizontal canvas-space translation (walk movement).
+  final double translateX;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -55,6 +64,11 @@ class RigPainter extends CustomPainter {
       skeleton,
       pose: pose,
       offsetScale: PoseSolver.rigHeight(skeleton),
+      rootMatrix: playbackRootMatrix(
+        centerX: skeleton.canvasSize.width / 2,
+        facing: facing,
+        translateX: translateX,
+      ),
     );
 
     final paintImg = Paint()..filterQuality = FilterQuality.medium;

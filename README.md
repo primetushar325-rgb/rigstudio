@@ -78,6 +78,48 @@ faster rebuilds.
 
 ---
 
+## What changed in this pass
+
+### Fix — MP4 export (was being rejected by the gallery)
+- Added `ffmpeg_kit_flutter_new`. `ExportService.encodeMp4` now runs a real
+  `libx264`/`yuv420p` encode, checks `ReturnCode.isSuccess`, and surfaces the
+  ffmpeg log on failure. If the native encoder isn't linked it falls back to the
+  PNG frame sequence with a clear note instead of writing a mislabelled "mp4".
+- **Every export is now validated** (file size + container magic bytes:
+  `GIF8` / `.ftyp` / `\x89PNG`) before Save/Share is offered, so a corrupt file
+  can never reach the gallery. GIF stays the default; MP4 is labelled **Beta**
+  because it must be verified with the ffmpeg native lib linked on a real device.
+  The app's exact encode command was verified on a host ffmpeg to produce a real
+  H.264 `ftyp` mp4.
+
+### Walk direction + on-screen movement
+- `FacingDirection { right, left }` + `PlaybackMotion`. Facing left mirrors the
+  whole rig about its centre line (via a `playbackRootMatrix` passed into the FK
+  solver), so a character can walk either way with zero re-authoring.
+- The walk/run clips can translate the character horizontally (in place by
+  default for clean loops). Animate screen has a single control —
+  **In place / Walk left / Walk right** — that drives facing and movement sign
+  together so they can never disagree.
+
+### Character integrity
+- **Rotation limits**: `BonePart.minAngleRad/maxAngleRad`, clamped in the FK
+  solver. Defaults are per standard bone and are asserted (in a unit test) to
+  never clip a shipped clip while still stopping a limb from being spun into a
+  "broken" pose.
+- **Undo / Redo**: a two-stack `History<T>` drives the editor — joint/crop/layer/
+  mirror/pivot edits are all reversible from the Layers screen (and pivot drags
+  collapse into a single undo step).
+- **Alpha edge feathering**: cuts run a 1–2 px Gaussian on the alpha channel
+  only (RGB untouched) to remove green fringe.
+- **Symmetry snap**: in the template "Joints" mode, a *Mirror both sides* chip
+  keeps the left/right joints perfectly symmetrical as you nudge one.
+
+Not yet in this pass (queued): import-pipeline refactor into
+`original.png`+`skeleton.json` folders, the timeline/keyframe editor, prebuilt
+character & scene/background libraries, props/accessories and multi-character
+scenes. The models/enums above (facing, motion, limits, history) were added first
+so those land on top cleanly.
+
 ## Architecture
 
 ```

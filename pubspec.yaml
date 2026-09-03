@@ -30,6 +30,7 @@ dependencies:
 
   # --- saving exports to the device gallery ---
   gal: ^2.3.0
+  ffmpeg_kit_flutter_new: ^4.6.2
 
   # NOTE (export/mp4): the GIF encoder in `image` covers the free tier and has
   # zero native weight. To add H.264 mp4 export, uncomment the line below and

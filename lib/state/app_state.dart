@@ -12,6 +12,7 @@ import '../models/skeleton.dart';
 import '../services/chroma_key_service.dart';
 import '../services/cut_service.dart';
 import '../services/storage_service.dart';
+import 'history.dart';
 
 // ---------------------------------------------------------------------------
 // Settings + monetization flag
@@ -198,6 +199,52 @@ class EditorController extends Notifier<EditorState> {
 
   StorageService get _storage => StorageService.instance;
 
+  /// Undo/redo over the rig. Each entry is a deep-copied skeleton plus a shallow
+  /// copy of the decoded part images, so joint/crop/layer/mirror changes are all
+  /// reversible.
+  final History<(Skeleton, Map<String, ui.Image>)> _history = History();
+
+  bool get canUndo => _history.canUndo;
+  bool get canRedo => _history.canRedo;
+
+  (Skeleton, Map<String, ui.Image>) _snapNow() {
+    final skeleton = Skeleton.fromJson(state.character!.skeleton!.toJson());
+    return (skeleton, Map<String, ui.Image>.from(state.partImages));
+  }
+
+  /// Records the current state so the next mutation can be undone. Call at the
+  /// top of every mutating editor action, or once at the start of a continuous
+  /// gesture (drag) whose many updates should collapse into one undo step.
+  void _recordHistory() {
+    if (state.character?.skeleton == null) return;
+    _history.record(_snapNow);
+  }
+
+  /// Public history marker for starting a discrete gesture (e.g. a pivot drag).
+  void recordHistory() => _recordHistory();
+
+  Future<void> undo() async {
+    final snap = _history.undo(_snapNow);
+    if (snap != null) await _restoreSnapshot(snap);
+  }
+
+  Future<void> redo() async {
+    final snap = _history.redo(_snapNow);
+    if (snap != null) await _restoreSnapshot(snap);
+  }
+
+  Future<void> _restoreSnapshot((Skeleton, Map<String, ui.Image>) snap) async {
+    final c = state.character;
+    if (c == null) return;
+    c.skeleton = Skeleton.fromJson(snap.$1.toJson());
+    await _storage.saveCharacter(c);
+    state = state.copyWith(
+      character: c,
+      partImages: Map<String, ui.Image>.from(snap.$2),
+    );
+    ref.read(libraryProvider.notifier).refresh();
+  }
+
   // ------------------------------------------------------------------ opening
 
   Future<void> open(Character c) async {
@@ -285,6 +332,7 @@ class EditorController extends Notifier<EditorState> {
     final t = state.template;
     final bytes = state.workingBytes;
     if (c == null || t == null || bytes == null) return;
+    _recordHistory();
 
     state = state.copyWith(busy: true, status: 'Cutting parts…');
     final skeleton = buildSkeletonFromTemplate(
@@ -335,6 +383,7 @@ class EditorController extends Notifier<EditorState> {
     final bytes = state.workingBytes;
     if (c == null || bytes == null) return;
     ensureSkeleton();
+    _recordHistory();
     state = state.copyWith(busy: true, status: 'Cutting ${boneId.replaceAll('_', ' ')}…');
 
     final cut = await CutService.lassoCrop(
@@ -368,6 +417,7 @@ class EditorController extends Notifier<EditorState> {
     final c = state.character;
     final s = c?.skeleton;
     if (c == null || s == null) return;
+    _recordHistory();
     // The list is shown top-of-stack first, so it is the reverse of drawOrder.
     final ordered = s.drawOrder.reversed.toList();
     final item = ordered.removeAt(oldIndex);
@@ -382,6 +432,7 @@ class EditorController extends Notifier<EditorState> {
   Future<void> togglePartMirror(String boneId) async {
     final bone = state.character?.skeleton?.byId(boneId);
     if (bone == null) return;
+    _recordHistory();
     bone.mirrored = !bone.mirrored;
     await _persist();
   }
@@ -389,6 +440,7 @@ class EditorController extends Notifier<EditorState> {
   Future<void> togglePartVisible(String boneId) async {
     final bone = state.character?.skeleton?.byId(boneId);
     if (bone == null) return;
+    _recordHistory();
     bone.visible = !bone.visible;
     await _persist();
   }
@@ -396,6 +448,7 @@ class EditorController extends Notifier<EditorState> {
   Future<void> setPivot(String boneId, Offset pivot) async {
     final bone = state.character?.skeleton?.byId(boneId);
     if (bone == null) return;
+    // History is recorded once when the drag begins (see recordHistory above).
     bone.pivot = pivot;
     await _persist();
   }
@@ -404,6 +457,7 @@ class EditorController extends Notifier<EditorState> {
     final c = state.character;
     final s = c?.skeleton;
     if (c == null || s == null) return;
+    _recordHistory();
     c.skeleton = s.mirroredRig();
     // bitmaps swap sides too
     final swapped = <String, ui.Image>{};
@@ -417,6 +471,7 @@ class EditorController extends Notifier<EditorState> {
   Future<void> clearPart(String boneId) async {
     final bone = state.character?.skeleton?.byId(boneId);
     if (bone == null) return;
+    _recordHistory();
     bone.imagePath = null;
     bone.imageRect = Rect.zero;
     final images = Map<String, ui.Image>.from(state.partImages)..remove(boneId);

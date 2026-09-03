@@ -31,7 +31,7 @@ class PoseSolver {
     final result = <String, Matrix4>{};
     for (final bone in skeleton.topologicalOrder) {
       final p = pose[bone.id];
-      final rot = (p?.rotation ?? 0) + bone.rotation;
+      final rot = bone.clampRotation((p?.rotation ?? 0) + bone.rotation);
       final trs = (p?.offset ?? Offset.zero) * offsetScale + bone.translation;
 
       final local = Matrix4.identity()

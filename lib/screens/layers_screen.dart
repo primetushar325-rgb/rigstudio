@@ -38,6 +38,16 @@ class LayersScreen extends ConsumerWidget {
         title: const Text('Layers & pivots'),
         actions: [
           IconButton(
+            tooltip: 'Undo',
+            icon: const Icon(Icons.undo),
+            onPressed: () async => notifier.undo(),
+          ),
+          IconButton(
+            tooltip: 'Redo',
+            icon: const Icon(Icons.redo),
+            onPressed: () async => notifier.redo(),
+          ),
+          IconButton(
             tooltip: 'Mirror whole rig',
             icon: const Icon(Icons.flip),
             onPressed: notifier.mirrorWholeRig,
@@ -230,7 +240,12 @@ class _LayerTile extends ConsumerWidget {
                 Offset toLocalCanvas(Offset widgetPoint) =>
                     fit.toCanvas(widgetPoint) + bone.imageRect.topLeft;
                 return GestureDetector(
-                  onPanDown: (d) => setLocal(() => pivot = toLocalCanvas(d.localPosition)),
+                  // Record one undo step at the start of the drag; the many
+                  // onPanUpdate moves collapse into a single undo.
+                  onPanDown: (d) {
+                    ref.read(editorProvider.notifier).recordHistory();
+                    setLocal(() => pivot = toLocalCanvas(d.localPosition));
+                  },
                   onPanUpdate: (d) =>
                       setLocal(() => pivot = toLocalCanvas(d.localPosition)),
                   child: CustomPaint(

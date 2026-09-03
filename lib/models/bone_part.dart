@@ -19,6 +19,8 @@ class BonePart {
     this.mirrored = false,
     this.visible = true,
     this.required_ = true,
+    this.minAngleRad,
+    this.maxAngleRad,
   });
 
   /// Standard bone id, e.g. `upper_arm_l`. Animation clips key off this.
@@ -55,6 +57,23 @@ class BonePart {
   // ignore: non_constant_identifier_names
   final bool required_;
 
+  /// Optional rotation limits (radians). When an [AnimationClip] keyframe, a
+  /// live pose drag or a manual pose would exceed these, the rotation is
+  /// clamped so a joint can't be bent into an unnatural / "broken" pose.
+  /// `null` = no constraint.
+  final double? minAngleRad;
+  final double? maxAngleRad;
+
+  bool get hasAngleLimits => minAngleRad != null || maxAngleRad != null;
+
+  /// Clamps a candidate local rotation (radians) to this bone's limits.
+  double clampRotation(double angle) {
+    var a = angle;
+    if (minAngleRad != null && a < minAngleRad!) a = minAngleRad!;
+    if (maxAngleRad != null && a > maxAngleRad!) a = maxAngleRad!;
+    return a;
+  }
+
   bool get isCut => imagePath != null;
 
   BonePart copyWith({
@@ -67,6 +86,8 @@ class BonePart {
     Offset? translation,
     bool? mirrored,
     bool? visible,
+    double? minAngleRad,
+    double? maxAngleRad,
   }) {
     return BonePart(
       id: id,
@@ -81,6 +102,8 @@ class BonePart {
       mirrored: mirrored ?? this.mirrored,
       visible: visible ?? this.visible,
       required_: required_,
+      minAngleRad: minAngleRad ?? this.minAngleRad,
+      maxAngleRad: maxAngleRad ?? this.maxAngleRad,
     );
   }
 
@@ -95,6 +118,8 @@ class BonePart {
         'mirrored': mirrored,
         'visible': visible,
         'required': required_,
+        if (minAngleRad != null) 'minAngle': minAngleRad,
+        if (maxAngleRad != null) 'maxAngle': maxAngleRad,
       };
 
   factory BonePart.fromJson(Map<String, dynamic> j) => BonePart(
@@ -108,5 +133,7 @@ class BonePart {
         mirrored: j['mirrored'] as bool? ?? false,
         visible: j['visible'] as bool? ?? true,
         required_: j['required'] as bool? ?? true,
+        minAngleRad: (j['minAngle'] as num?)?.toDouble(),
+        maxAngleRad: (j['maxAngle'] as num?)?.toDouble(),
       );
 }
