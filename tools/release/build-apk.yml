@@ -1,0 +1,49 @@
+name: build-apk
+
+# Release-build workflow for the standalone distribution repo (created by tools/release/publish.sh).
+# Every push to main builds the debug APK with the real Android SDK and republishes it as a GitHub
+# Release under the fixed tag `apk`, so the download URL never changes:
+#
+#   https://github.com/<owner>/<repo>/releases/download/apk/app-debug.apk
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --stacktrace --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+
+      - name: Publish direct-download release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk
+          name: "RigStudio APK (latest build)"
+          body: |
+            Auto-built from `main` by GitHub Actions.
+            Commit: ${{ github.sha }}
+            Install: enable "install unknown apps" for your browser/file manager, then open the APK.
+          files: app/build/outputs/apk/debug/app-debug.apk
+          make_latest: true
