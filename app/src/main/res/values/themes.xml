@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      A framework Material theme (no AppCompat/Material dependency): Compose draws everything
+      below the window, so the XML theme only has to get the status bar and window background
+      right — including before the first frame, so there is never a white flash.
+    -->
+    <style name="Theme.RigStudio" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/app_background</item>
+        <item name="android:statusBarColor">@color/app_background</item>
+        <item name="android:navigationBarColor">@color/app_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Premium dark shell. The Compose theme owns the rest of the palette. -->
+    <color name="app_background">#FF0B0E14</color>
+    <color name="ic_launcher_background">#FF11151F</color>
+</resources>
