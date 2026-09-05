@@ -1,6 +1,7 @@
 package com.rigstudio.app.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -106,7 +107,7 @@ fun RigTopBar(
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = RigColors.Background,
             titleContentColor = RigColors.TextPrimary,
-            navigationIconColor = RigColors.TextPrimary,
+            navigationIconContentColor = RigColors.TextPrimary,
             actionIconContentColor = RigColors.TextSecondary,
         ),
     )
@@ -199,11 +200,16 @@ fun RigChip(
             disabledContainerColor = RigColors.Surface,
             disabledLabelColor = RigColors.TextDisabled,
         ),
-        border = FilterChipDefaults.filterChipBorder(
-            enabled = enabled,
-            selected = selected,
-            borderColor = RigColors.Outline,
-            selectedBorderColor = RigColors.Primary,
+        // A plain BorderStroke instead of FilterChipDefaults.filterChipBorder: the defaults
+        // helper's parameter list shifted between Material3 1.2 and 1.3, and a chip border is
+        // three lines of policy, not a reason to couple to an unstable signature.
+        border = BorderStroke(
+            width = 1.dp,
+            color = when {
+                selected -> RigColors.Primary
+                enabled -> RigColors.Outline
+                else -> RigColors.Outline.copy(alpha = 0.4f)
+            },
         ),
     )
 }

@@ -103,8 +103,24 @@ done
 if [ "$conclusion" != "success" ]; then
     echo
     echo "publish.sh: build did not succeed (state='$run_state')."
-    echo "   Open the run URL above, read the compile errors, fix them (or ask for fixes),"
-    echo "   then re-run this script - the same download link is republished on success."
+    run_id=$(api GET "/repos/$LOGIN/$REPO_NAME/actions/runs?per_page=1" | \
+        python3 -c 'import json,sys; print((json.load(sys.stdin).get("workflow_runs") or [{}])[0].get("id",""))')
+    if [ -n "$run_id" ]; then
+        echo "-- failed steps:"
+        api GET "/repos/$LOGIN/$REPO_NAME/actions/runs/$run_id/jobs" | python3 -c 'import json,sys
+for job in json.load(sys.stdin).get("jobs", []):
+    for step in job.get("steps", []):
+        if step.get("conclusion") == "failure":
+            print("   -", step.get("name"))'
+        if command -v unzip >/dev/null 2>&1; then
+            echo "-- compiler errors from the log:"
+            curl -sL -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/$LOGIN/$REPO_NAME/actions/runs/$run_id/logs" -o "$WORK/logs.zip"
+            unzip -p "$WORK/logs.zip" 2>/dev/null | grep -E "^e: |error:|FAILURE:|What went wrong" | tail -40 | sed 's/^/   /'
+        fi
+    fi
+    echo "   Fix the errors (or paste them back for fixes), then re-run this script -"
+    echo "   the same download link is republished on success."
     exit 1
 fi
 
