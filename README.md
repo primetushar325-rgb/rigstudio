@@ -1,313 +1,155 @@
-# RigStudio — 2D character rigging & animation (Flutter)
+# RigStudio V3 — draw a sheet, get a rigged, animated character (native Android)
 
-Import a character image → key out the background → drop a **standard skeleton** on
-top of it → every shipped animation just plays. 100% on-device: no backend, no
-AI/ML auto-rigging service, no network calls anywhere in the build.
+RigStudio turns **one 2048×2048 transparent PNG** — the *Character Sheet* — into a fully rigged 2D
+character that plays **18 built-in animations** and exports them as **MP4 video**, entirely on the
+device. No AI, no cloud, no login, no subscription, no network permission: the app is
+airplane-mode-first by design.
+
+The pipeline is deterministic and fixed-coordinate: every body part lives in a named slot at an
+exact rectangle on the sheet, so extraction is pixel analysis (alpha + bounding box), never
+guesswork.
 
 <p align="center">
-  <img src="preview/walk.gif" width="220" alt="walk cycle">
-  <img src="preview/wave.gif" width="220" alt="wave">
-  <img src="preview/idle.gif" width="220" alt="idle">
+  <img src="docs/assets/blank-character-sheet.png" width="520" alt="blank character sheet template">
 </p>
-
-<p align="center"><em>Rendered by the app's own pipeline in <code>flutter test</code> — demo character, chroma-keyed, auto-cut into 14 parts, animated with the shipped clips.</em></p>
-
-<p align="center"><img src="preview/filmstrip_walk.png" width="760" alt="walk filmstrip"></p>
-
-Verified with Flutter **3.47.2 / Dart 3.13.2**. `flutter analyze` is clean and
-`flutter test` runs the *entire* pipeline headlessly (chroma key → auto-cut →
-FK render → GIF encode), writing real artefacts to `preview/`.
+<p align="center"><em>The bundled blank template, rendered by <code>tools/render_template.py</code>
+from the same solved layout the app draws (<code>tools/layout.json</code>).</em></p>
 
 ---
 
-## Quick start
+## How it works
+
+```
+ Character Sheet PNG (2048×2048, RGBA)
+   │  1. validate   size, alpha channel, required front slots non-empty
+   │  2. extract    crop each of the 60 named slots, trim transparent margins
+   │  3. rig        bones Root→Torso→Head/Arms/Legs, pivots per spec, z-order rules
+   │  4. animate    18 clips as pure keyframe data (deterministic, loopable)
+   │  5. render     offscreen Canvas → preview Surface or export frames
+   └─ 6. export     MediaCodec H.264 → MediaMuxer MP4 (or PNG sequence), validated afterwards
+```
+
+* **Extraction** reads only what is inside each slot rectangle. Empty-slot detection is
+  alpha/bounding-box analysis; nothing is segmented, traced or "understood".
+* **Rig** pivots: head 50%/90%, torso 50%/8%, limbs 50%/8%, feet 85%/50%. Bone limits are enforced
+  per joint; mirrored views negate rotations instead of re-authoring clips.
+* **Views**: front (always), side-left / side-right (8 parts each, optional, mirrorable), back
+  (14 parts, optional). A missing view is *disabled and labelled*, never faked.
+* **Face system**: 5 eye + 11 mouth slots auto-attach to the head; Talk cycles mouths
+  closed → A → E → O → closed deterministically.
+* **Export**: MP4 (H.264) is the primary format — 720p/1080p, 24/30/60 fps (default 1080p30),
+  optional local audio track, encoded with `MediaCodec` + `MediaMuxer` from offscreen renders.
+  No screen recording, no FFmpeg, no GIF-as-primary. Every file is re-opened and validated
+  (exists, size > 0, tracks, duration, dimensions, fps) before Save/Share/Open is offered.
+
+## The 18 animations
+
+Idle · Stand · Walk · Run · Talk · Wave · Sit · Sleep · Jump · Walk+Talk ·
+Side Walk · Side Run · Side Talk · Look Back · Happy · Sad · Angry · Surprised
+
+Clips are data (`core/.../anim/`): keyframed bone tracks with per-joint limits, looping semantics
+and dynamic z-order (e.g. legs swap in front of / behind the torso while walking).
+
+## Repository layout
+
+| Path | What it is |
+| --- | --- |
+| `core/` | Pure Kotlin engine: template geometry, extraction, rig, animation, draw-lists, export models, JSON, project persistence. No Android dependencies; 161 unit tests. |
+| `app/` | Native Android app: Compose UI, ViewModels, Canvas stage renderer, `MediaCodec` MP4 writer, project storage, template & sample-character art. |
+| `tools/` | Offline verification: slot/layout dumpers, reference PNG renderer, sheet checker, synthetic-sheet painter, one-command `verify_all.sh`. |
+| `docs/assets/` | The rendered blank character sheet (generated, committed for review & CI drift checks). |
+| `legacy/v2-flutter/` | The previous Flutter implementation (V1/V2), kept for reference only. Superseded entirely by V3. |
+
+### Module map (app)
+
+`ui/` Compose screens & theme · `editor/` ViewModels + playback state · `render/` stage renderer,
+`StageView`, thumbnails · `export/` YUV conversion, audio source, MP4 writer, export runner ·
+`pipeline/` sheet import & validation · `art/` template + sample character · `data/` project store.
+
+## Building
+
+Android Studio (Ladybug or newer) or:
 
 ```bash
-flutter pub get
-flutter run                 # Android / iOS device or simulator
-flutter test                # 10 tests: rig math, clip data, json, full pipeline
-flutter test test/filmstrip_preview_test.dart   # contact sheets per clip
+./gradlew :app:assembleDebug      # JDK 17 + Android SDK 35
 ```
 
-No character handy? **Import → "Use built-in demo character"** generates a
-procedurally drawn figure on a green screen so every screen (chroma key,
-template align, auto-cut, playback, export) is testable immediately.
+The app declares **no permissions** in its manifest; media access goes through the system picker
+and SAF, and projects live in app-private storage (`projects/<id>/…`).
 
----
+## CI
 
-## What's in `preview/` (generated by the tests, not mock-ups)
-
-| File | What it proves |
-|---|---|
-| `01_source.png` / `02_keyed.png` | chroma key removes a solid green backdrop with a feathered edge |
-| `parts/*.png` | 14 auto-cropped, transparent body-part bitmaps from one template placement |
-| `walk.gif`, `wave.gif`, `idle.gif` | exported clips with background + watermark |
-| `run_transparent.gif` | transparent-background export path |
-| `filmstrip_*.png` | 8-frame contact sheet per clip for reviewing timing |
-
----
-
-## Install the APK
-
-`dist/rigstudio-v0.1.0-universal-release.apk` (54 MB, arm64-v8a + armeabi-v7a +
-x86_64, `com.rigstudio.rigstudio`, targetSdk 36) is a ready-to-sideload build.
+`tools/ci/github-workflow.yml` is the GitHub Actions workflow for V3 (verify_all --drift, then a
+Gradle debug APK). It is kept in `tools/` because this session's GitHub token is not allowed to
+modify `.github/workflows/`; copy it into place once that permission is available:
 
 ```bash
-adb install -r dist/rigstudio-v0.1.0-universal-release.apk
-# or copy it to the phone and open it (allow "install unknown apps")
+cp tools/ci/github-workflow.yml .github/workflows/ci.yml
 ```
 
-> **Signing:** like every stock Flutter release build with no `key.properties`,
-> this APK is signed with the Android *debug* certificate — fine for sideloading
-> and testing, **not** publishable to Play. To ship, create a keystore, add
-> `android/key.properties`, and point `signingConfigs.release` at it in
-> `android/app/build.gradle.kts`.
+Until then the repository still carries the archived Flutter workflow, which no longer matches the
+tree and will report failures on V3 branches.
 
-Rebuild it yourself with:
+## Verifying without a phone
+
+Everything below runs offline with a JDK, `kotlinc` and stock Python 3:
 
 ```bash
-flutter build apk --release            # universal
-flutter build apk --release --split-per-abi   # smaller per-ABI APKs
-flutter build appbundle --release      # Play Store .aab
+bash tools/verify_all.sh          # 8 steps, all green == pipeline holds together
+bash tools/verify_all.sh --drift  # + fail if committed sheet artefacts are stale
 ```
 
-The committed `android/gradle.properties` is tuned for low-memory machines
-(900 MB heap, no daemon, single worker). On a real dev box raise
-`org.gradle.jvmargs` to `-Xmx4g` and set `org.gradle.daemon=true` for much
-faster rebuilds.
+| Step | Proves |
+| --- | --- |
+| `run_core_tests.sh` | 161 engine tests: template, layout, extraction, rig, draw-lists, animation, playback, export, persistence |
+| `check_app.sh` | `:core` and all non-Compose `:app` sources compile against `tools/android-stubs` (mirrored Android API) |
+| `dump_slots.sh` | Slot geometry (`slots.json`) and the solved guide-ink layout (`layout.json`) straight from the Kotlin template |
+| `render_template.py` | Reference render of the blank sheet from `layout.json` (5×7 bitmap font, no deps) |
+| `sheet_check.py --template` | **The invariant: zero guide ink inside any slot rectangle**, checked pixel-by-pixel |
+| `sheet_check.py` | Any sheet PNG: riggability, available views, mirror offer, expressions/mouths, stray-ink warnings |
+| `make_test_sheet.py` | Synthetic filled sheets (front / front+side / full) so the analyser is tested end-to-end |
+| `make_sample_character.py` | Paints the bundled sample character (all 60 slots, 5 expressions, 11 mouths) |
+| `render_previews.sh` | Runs a sheet through extract -> rig -> all 18 clips and rasterises real frames on the JVM (filmstrips + contact sheet); fails on any empty frame |
 
----
+`render_previews.sh` is the offline stand-in for a phone: it feeds a sheet PNG through the very
+same core code the app uses - `SheetProcessor`, `RigBuilder`, `ForwardKinematics`,
+`PuppetComposer` - and blits the resulting draw lists with a naive JVM rasteriser, so every
+(view, clip) pair is proven to produce framed, non-empty animation frames without an Android SDK.
 
-## What changed in this pass
+<p align="center">
+  <img src="docs/assets/sample-character-sheet.png" width="360" alt="sample character sheet">
+</p>
+<p align="center"><em>The bundled sample character sheet: original placeholder artwork in all 60
+slots, used by the offline checks and available in-app for instant testing.</em></p>
 
-### Fix — MP4 export (was being rejected by the gallery)
-- Added `ffmpeg_kit_flutter_new`. `ExportService.encodeMp4` now runs a real
-  `libx264`/`yuv420p` encode, checks `ReturnCode.isSuccess`, and surfaces the
-  ffmpeg log on failure. If the native encoder isn't linked it falls back to the
-  PNG frame sequence with a clear note instead of writing a mislabelled "mp4".
-- **Every export is now validated** (file size + container magic bytes:
-  `GIF8` / `.ftyp` / `\x89PNG`) before Save/Share is offered, so a corrupt file
-  can never reach the gallery. GIF stays the default; MP4 is labelled **Beta**
-  because it must be verified with the ffmpeg native lib linked on a real device.
-  The app's exact encode command was verified on a host ffmpeg to produce a real
-  H.264 `ftyp` mp4.
+The layout of guide ink (labels, outlines, pivot ticks) is solved as pure geometry in
+`core/.../template/TemplateLayout.kt` and unit-tested: every slot is labelled, no text overlaps
+text or a pivot tick, and nothing is ever drawn inside a slot — because ink inside a slot would be
+extracted as artwork on import.
 
-### Props / accessories
-- `PropAttachment` model: a transparent PNG attached to a bone with a local
-  offset / rotation / scale / z-order. Props are drawn under the bone's own world
-  matrix, so a stick on `hand_r` swings with the arm automatically and bone
-  rotation limits do **not** apply to them.
-- Stored on the `Skeleton` (so undo/redo + serialisation cover them), PNGs in a
-  `props/` folder per character. Whole-rig mirror reparents props to the swapped
-  bone, flips the horizontal offset and mirrors the bitmap (so a phone screen
-  doesn't come out backwards).
-- Built-in generated prop library (hat, glasses, stick, phone, bag) + a **Props**
-  panel (open from the Animate screen): live preview, add from library, re-parent
-  to any bone, mirror/visibility/delete, scale/rotation/X/Y-offset tuning.
-- Props composite into GIF/PNG/mp4 exports. `props_idle.png` in `preview/` shows a
-  demo character wearing a hat + glasses (rendered by the tests).
+### Character Sheet rules (short version)
 
-### Walk direction + on-screen movement
-- `FacingDirection { right, left }` + `PlaybackMotion`. Facing left mirrors the
-  whole rig about its centre line (via a `playbackRootMatrix` passed into the FK
-  solver), so a character can walk either way with zero re-authoring.
-- The walk/run clips can translate the character horizontally (in place by
-  default for clean loops). Animate screen has a single control —
-  **In place / Walk left / Walk right** — that drives facing and movement sign
-  together so they can never disagree.
+* 2048×2048 RGBA PNG; 60 slots: 24 front-body (exact spec coordinates), 16 face (5 eyes, 11 mouths),
+  16 side (8 left + 8 right), 14 back.
+* Required: the 10 front-body parts that make a riggable character. Everything else degrades to a
+  warning and a disabled view/animation.
+* Complete left profile + empty right profile ⇒ optional **Mirror Side View** derives the right side.
+* Artwork outside every slot is ignored (with a warning showing how much stray ink was found).
 
-### Character integrity
-- **Rotation limits**: `BonePart.minAngleRad/maxAngleRad`, clamped in the FK
-  solver. Defaults are per standard bone and are asserted (in a unit test) to
-  never clip a shipped clip while still stopping a limb from being spun into a
-  "broken" pose.
-- **Undo / Redo**: a two-stack `History<T>` drives the editor — joint/crop/layer/
-  mirror/pivot edits are all reversible from the Layers screen (and pivot drags
-  collapse into a single undo step).
-- **Alpha edge feathering**: cuts run a 1–2 px Gaussian on the alpha channel
-  only (RGB untouched) to remove green fringe.
-- **Symmetry snap**: in the template "Joints" mode, a *Mirror both sides* chip
-  keeps the left/right joints perfectly symmetrical as you nudge one.
+## Guarantees (and explicit non-goals)
 
-Not yet in this pass (queued): import-pipeline refactor into
-`original.png`+`skeleton.json` folders, the timeline/keyframe editor, prebuilt
-character & scene/background libraries, props/accessories and multi-character
-scenes. The models/enums above (facing, motion, limits, history) were added first
-so those land on top cleanly.
+* Offline: no `INTERNET` permission, no analytics, no cloud sync, no accounts, no payments.
+* Deterministic: same sheet ⇒ same rig, same frames, same MP4, on any device.
+* No AI/ML auto-rigging, no manual skeleton/lasso editing, no fake side/back generation,
+  no FFmpeg, no screen-record export.
+* Core engine and all 18 animations are free; nothing is gated behind payment.
 
-## Architecture
+## Legacy
 
-```
-lib/
-├── main.dart                     app shell + dark M3 theme
-├── models/
-│   ├── bone_part.dart            BonePart (id, parentId, pivot, imagePath, zIndex, mirrored…)
-│   ├── skeleton.dart             flat bone list + hierarchy, whole-rig mirror, json
-│   ├── animation_clip.dart       AnimationClip / BoneKeyframe / BonePose + sampler
-│   ├── character.dart            saved character (source, working image, skeleton)
-│   └── geom_json.dart            Offset/Rect/Size serialisation helpers
-├── data/
-│   ├── standard_rig.dart         THE standard skeleton (ids, proportions, cut shapes)
-│   │                             + RigTemplateTransform (template space → canvas space)
-│   └── animation_library.dart    hand-authored clips: idle, stand, walk, run, wave,
-│                                 talk, sit, sleep (+ jump = premium sample)
-├── rendering/
-│   ├── fk.dart                   PoseSolver: pure 2D forward kinematics with Matrix4
-│   └── rig_painter.dart          CustomPainter draw order, per-part mirror, bone overlay,
-│                                 stick-figure fallback, transparency checkerboard
-├── services/
-│   ├── chroma_key_service.dart   Cb/Cr-distance keyer + despill, runs in compute()
-│   ├── cut_service.dart          capsule / ellipse / polygon masks → trimmed PNG + rect
-│   ├── demo_character.dart       procedural test character on a green screen
-│   ├── storage_service.dart      documents-dir layout, json, thumbnails, exports
-│   └── export_service.dart       offscreen frame render → GIF / PNG seq (mp4 hook)
-├── state/app_state.dart          Riverpod: settings/premium, library, editor controller
-├── widgets/                      CanvasFit, BusyOverlay, sliders, HSV colour wheel,
-│                                 background bar, RigPreview player
-└── screens/                      home → import → chroma key → rig entry →
-                                  template align | lasso → layers → animate → export
-                                  (+ paywall)
-```
+`legacy/v2-flutter/` contains the earlier Flutter app (chroma-key import, GIF previews). It is
+archived reference material: V3 replaces its architecture (fixed-slot extraction instead of
+auto-segmentation, MP4 instead of GIF-primary) and shares no code or assets with it.
 
-### The FK maths (why every clip works on every character)
+## License
 
-Each bone stores its **pivot in canvas space** (the joint position in the source
-image). Per frame:
-
-```
-world(bone) = world(parent) · T(translation) · T(pivot) · R(θ) · T(-pivot)
-```
-
-Children inherit the parent matrix, so rotating `upper_arm_l` carries
-`forearm_l` and `hand_l` with it — classic cut-out animation, no 3D engine, no
-skinning. `PoseSolver.rigHeight()` scales clip translation offsets (authored as
-fractions of rig height) into pixels, so identical clip data drives a 300 px and
-a 3000 px character.
-
-### Bone ids (identical in both rigging paths)
-
-```
-torso (root)
-├── head
-├── upper_arm_l → forearm_l → hand_l
-├── upper_arm_r → forearm_r → hand_r
-├── thigh_l → shin_l → foot_l
-└── thigh_r → shin_r → foot_r
-```
-
-`_l` / `_r` = **screen** left/right of a front-facing character; the whole-rig
-mirror button swaps both the bitmaps and the assignments. `hand_*` and `foot_*`
-are optional, everything else is required before a rig counts as complete.
-
----
-
-## Flow
-
-1. **Home / Library** — grid of saved characters, rigged vs in-progress, long-press
-   to rename / re-rig / delete.
-2. **Import** — `image_picker` gallery pick (or the demo character); anything that
-   isn't a PNG is normalised to 8-bit RGBA PNG on the way in.
-3. **Chroma key** *(optional)* — auto-guessed key colour from the image corners,
-   colour wheel, tolerance + edge-feather sliders, despill toggle. Live preview
-   runs on a 480 px copy in a background isolate; confirming bakes `working.png`
-   at full resolution. "Skip" keeps the original image.
-4. **Rig setup — two paths, same output**
-   * **Path A · Standard template (default).** A ready-made skeleton is overlaid;
-     one finger moves it, two fingers scale + rotate, "Joints" mode nudges any
-     single joint. Cyan shapes show exactly what will be cropped. Confirm →
-     capsule/ellipse regions are cut per bone, alpha-feathered and trimmed to
-     content, in one isolate hop.
-   * **Path B · Manual lasso (premium).** Tap or drag a polygon around a part,
-     assign it to a bone id, cut. A chip checklist tracks what's still missing.
-     Also reachable per-part from Layers → **Refine this part**, which is the
-     fix-up for a bad auto-crop.
-5. **Layers & pivots** — drag to reorder `zIndex` (list is top-of-stack first),
-   per-part mirror / visibility, **Adjust pivot** (drag the crosshair on the part
-   bitmap), whole-rig mirror in the app bar.
-6. **Animate** — clip strip (idle, stand, walk, run, wave, talk, sit, sleep, jump),
-   play/pause, speed, bones overlay, background picker (green / black / white /
-   custom wheel / transparent checkerboard), export-length trimmer.
-7. **Export** — offscreen `PictureRecorder` per frame at 8–30 fps, framed by the
-   union of the posed bounds across the clip so nothing clips. GIF (default),
-   PNG sequence, or mp4 (see below). Save to gallery via `gal`, share via
-   `share_plus`.
-
----
-
-## Monetization (UI built, gate is a local flag)
-
-`Limits` in `lib/state/app_state.dart` holds every rule:
-
-| | Free | Premium |
-|---|---|---|
-| Rigging | standard template | + lasso cutting & per-part refine |
-| Clips | 8 core | + extra packs (`jump` ships as the sample) |
-| Export | 512 px, watermark, 3 s | up to 1440 px, no watermark, 30 s, mp4 |
-| Saved characters | 2 | unlimited |
-
-The paywall button flips a persisted boolean so you can test both tiers. Replace
-`SettingsController.setPremium` with your IAP/subscription callback.
-
----
-
-## Enabling mp4 export
-
-GIF needs no native code, so it's the default. For H.264:
-
-1. `pubspec.yaml` → uncomment `ffmpeg_kit_flutter_new: ^1.6.1` (the original
-   `ffmpeg_kit_flutter` is retired).
-2. Implement `ExportService.encodeMp4` — the exact FFmpeg command is already in
-   the doc comment above the stub. The screen renders the PNG frame sequence and
-   falls back to it gracefully when the encoder returns `false`.
-
----
-
-## Build order → where it landed
-
-| Step from the brief | Status |
-|---|---|
-| 1. Scaffold + navigation shell | `main.dart`, `screens/` |
-| 2. Gallery import onto a canvas | `import_screen.dart` |
-| 3. Chroma key | `chroma_key_service.dart`, `chroma_key_screen.dart` |
-| 4. Skeleton model + template overlay | `standard_rig.dart`, `template_align_screen.dart`, `fk.dart` |
-| 5. Auto-crop per bone | `cut_service.dart` |
-| 6. Layers panel | `layers_screen.dart` |
-| 7. Clips + playback | `animation_library.dart`, `rig_preview.dart` |
-| 8. Background picker | `color_wheel_picker.dart` |
-| 9. Export pipeline | `export_service.dart`, `export_screen.dart` |
-| 10. Lasso tool | `lasso_screen.dart` |
-| 11. Remaining clips | run, talk, sit, sleep, stand (+ jump) |
-| 12. Free/premium gating | `Limits`, `paywall_screen.dart` |
-
----
-
-## Authoring a new clip
-
-Add it to `lib/data/animation_library.dart` — degrees, `t` in 0..1, optional
-translation offsets in rig-height fractions:
-
-```dart
-final AnimationClip kNod = AnimationClip(
-  name: 'nod', label: 'Nod', durationSeconds: 1.2, loop: true,
-  tracks: {
-    'head':  _k([[0.0, 0], [0.35, 14], [0.7, -4], [1.0, 0]]),
-    'torso': _k([[0.0, 0, 0, 0], [0.5, 1, 0, -0.004], [1.0, 0, 0, 0]]),
-  },
-);
-```
-
-Then append it to `kAnimationLibrary`. Sign convention: **positive = clockwise on
-screen** (y is down). For arms, *negative on the left / positive on the right*
-folds them in toward the body. A test asserts every track targets a real bone id,
-and the filmstrip tool renders a contact sheet so you can check timing without a
-device.
-
-## Notes / known trade-offs
-
-* Auto-cut regions are capsules, so a limb held tight against the torso will pick
-  up a sliver of shirt — that's what per-part lasso refine is for.
-* GIF has 1-bit alpha; transparent exports hard-cut anything below 50% alpha.
-  Use the PNG sequence (or mp4 over a solid colour) for soft edges.
-* Permissions are already wired: `NSPhotoLibrary*` / `NSCamera*` in
-  `ios/Runner/Info.plist`, legacy `WRITE_EXTERNAL_STORAGE` (maxSdk 28) in the
-  Android manifest.
+See [LICENSE](LICENSE).

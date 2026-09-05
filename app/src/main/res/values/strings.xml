@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RigStudio</string>
+
+    <!-- Home -->
+    <string name="home_title">Characters</string>
+    <string name="home_empty_title">No characters yet</string>
+    <string name="home_empty_body">Import a finished 2048×2048 character sheet PNG, or open the blank template and draw one. Everything stays on this device.</string>
+    <string name="home_import">Import character sheet</string>
+    <string name="home_template">Blank template</string>
+    <string name="home_sample">Create sample character</string>
+    <string name="home_rename">Rename</string>
+    <string name="home_duplicate">Duplicate</string>
+    <string name="home_delete">Delete</string>
+    <string name="home_open">Open</string>
+    <string name="delete_confirm_title">Delete “%1$s”?</string>
+    <string name="delete_confirm_body">The character, its extracted parts and its exports are removed from this device. This cannot be undone.</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="save">Save</string>
+    <string name="share">Share</string>
+    <string name="open">Open</string>
+    <string name="close">Close</string>
+    <string name="retry">Try again</string>
+    <string name="done">Done</string>
+
+    <!-- Import -->
+    <string name="import_title">Import character sheet</string>
+    <string name="import_validating">Validating sheet…</string>
+    <string name="import_extracting">Extracting parts…</string>
+    <string name="import_rigging">Building rig…</string>
+    <string name="import_saving">Saving character…</string>
+    <string name="import_ready">Character Ready</string>
+    <string name="import_failed">Import failed</string>
+    <string name="import_pick_png">Choose a 2048×2048 PNG</string>
+    <string name="import_warnings_title">Ready, with notes</string>
+    <string name="import_errors_title">This sheet cannot be rigged</string>
+    <string name="import_open_editor">Open in editor</string>
+
+    <!-- Editor -->
+    <string name="editor_animation">Animation</string>
+    <string name="editor_view">View</string>
+    <string name="editor_speed">Speed</string>
+    <string name="editor_background">Background</string>
+    <string name="editor_expression">Expression</string>
+    <string name="editor_play">Play</string>
+    <string name="editor_pause">Pause</string>
+    <string name="editor_restart">Restart</string>
+    <string name="editor_export">Export video</string>
+    <string name="editor_view_locked">Needs Side View artwork</string>
+    <string name="editor_clip_needs_profile">This animation needs Side View artwork.</string>
+    <string name="background_transparent">Transparent</string>
+    <string name="background_solid">Solid colour</string>
+    <string name="background_image">Image</string>
+
+    <!-- Export -->
+    <string name="export_title">Export animation</string>
+    <string name="export_format">Format</string>
+    <string name="export_resolution">Resolution</string>
+    <string name="export_frame_rate">Frame rate</string>
+    <string name="export_duration">Duration</string>
+    <string name="export_audio">Audio track</string>
+    <string name="export_audio_none">None (silent)</string>
+    <string name="export_start">Start export</string>
+    <string name="export_running">Rendering frames…</string>
+    <string name="export_encoding">Encoding video…</string>
+    <string name="export_muxing">Writing MP4…</string>
+    <string name="export_validating">Validating file…</string>
+    <string name="export_success">Export finished</string>
+    <string name="export_failed">Export failed</string>
+
+    <!-- Template -->
+    <string name="template_title">Character sheet template</string>
+    <string name="template_save">Save template as PNG</string>
+    <string name="template_saved">Template saved</string>
+    <string name="template_hint">Draw inside each labelled area on a transparent 2048×2048 PNG. Areas marked REQUIRED must contain artwork; everything else is optional.</string>
+</resources>

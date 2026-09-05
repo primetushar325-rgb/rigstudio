@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Original RigStudio mark: a cut-out puppet inside a film frame. Drawn as vectors so the app
+  ships no binary artwork and the icon stays crisp at every density.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- film frame -->
+    <path
+        android:pathData="M22,30h64v48h-64z"
+        android:strokeColor="#FF7C8AA5"
+        android:strokeWidth="2.5"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M26,34h6v6h-6zM26,44h6v6h-6zM26,54h6v6h-6zM26,64h6v6h-6zM76,34h6v6h-6zM76,44h6v6h-6zM76,54h6v6h-6zM76,64h6v6h-6z"
+        android:fillColor="#FF7C8AA5" />
+
+    <!-- puppet: head, torso, arms and legs joined at pivot dots -->
+    <path
+        android:pathData="M54,38m-7,0a7,7 0,1 1,14 0a7,7 0,1 1,-14 0"
+        android:fillColor="#FF4FD8C4" />
+    <path
+        android:pathData="M48,47h12l3,20h-18z"
+        android:fillColor="#FF4FD8C4" />
+    <path
+        android:pathData="M47,49l-8,14l3.5,2.5l8,-13z"
+        android:fillColor="#FF37B3A2" />
+    <path
+        android:pathData="M61,49l8,14l-3.5,2.5l-8,-13z"
+        android:fillColor="#FF37B3A2" />
+    <path
+        android:pathData="M50,67l-2,15l4,0.6l2.4,-15z"
+        android:fillColor="#FF37B3A2" />
+    <path
+        android:pathData="M58,67l2,15l-4,0.6l-2.4,-15z"
+        android:fillColor="#FF37B3A2" />
+
+    <!-- pivot markers -->
+    <path
+        android:pathData="M54,47m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0M54,67m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0z"
+        android:fillColor="#FF0B0E14" />
+</vector>

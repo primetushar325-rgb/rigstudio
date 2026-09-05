@@ -1,40 +1,46 @@
-# --- Flutter / Dart ---
-.dart_tool/
-.packages
-.pub-cache/
-.pub/
+# --- Gradle / Android (RigStudio V3) ---
+.gradle/
 build/
+local.properties
+key.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.keystore
+*.jks
+app/release/
+app/debug/
+
+# --- IDE ---
 *.iml
 .idea/
 .vscode/
 
-# --- build outputs (APK is attached to GitHub Releases instead) ---
-dist/
+# --- Kotlin ---
+.kotlin/
 
-# --- Android ---
-android/.gradle/
-android/app/debug/
-android/app/profile/
-android/app/release/
-android/local.properties
-android/key.properties
-*.jks
-*.keystore
-
-# --- iOS ---
-ios/Pods/
-ios/.symlinks/
-ios/Flutter/Flutter.framework/
-ios/Flutter/Flutter.podspec
-ios/Flutter/App.framework/
-ios/Flutter/ephemeral/
-ios/Flutter/Generated.xcconfig
-ios/Flutter/flutter_export_environment.sh
-ios/Runner/GeneratedPluginRegistrant.*
+# --- legacy Flutter app (V1/V2, kept under legacy/v2-flutter/) ---
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+legacy/v2-flutter/android/.gradle/
+legacy/v2-flutter/android/local.properties
+legacy/v2-flutter/android/key.properties
+legacy/v2-flutter/ios/Pods/
+legacy/v2-flutter/ios/.symlinks/
+legacy/v2-flutter/ios/Flutter/Flutter.framework/
+legacy/v2-flutter/ios/Flutter/Flutter.podspec
+legacy/v2-flutter/ios/Flutter/App.framework/
+legacy/v2-flutter/ios/Flutter/ephemeral/
+legacy/v2-flutter/ios/Runner/GeneratedPluginRegistrant.*
+legacy/v2-flutter/.flutter-plugins-dependencies
 
 # --- misc ---
+dist/
 .DS_Store
 *.log
-
-# generated
-.flutter-plugins-dependencies
+__pycache__/
+*.pyc
