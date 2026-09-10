@@ -164,10 +164,14 @@ void main() {
       final s = buildRig();
       final m = s.mirroredRig();
       final copy = Skeleton.fromJson(m.toJson());
+      // JSON cannot carry ±Infinity: unbounded (infinite) limits and absent
+      // (null) limits mean the same thing after a reload.
+      double? norm(double? v) => (v == null || !v.isFinite) ? null : v;
       for (final b in copy.bones) {
         final orig = m.byId(b.id)!;
-        expect(b.minAngleRad, orig.minAngleRad, reason: '${b.id} limits lost');
-        expect(b.maxAngleRad, orig.maxAngleRad);
+        expect(norm(b.minAngleRad), norm(orig.minAngleRad),
+            reason: '${b.id} limits lost');
+        expect(norm(b.maxAngleRad), norm(orig.maxAngleRad));
         expect(b.rotation, orig.rotation);
       }
     });
