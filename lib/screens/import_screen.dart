@@ -49,8 +49,19 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
   }
 
   Future<void> _useDemo() async {
-    setState(() => _busy = true);
-    await _ingest(await DemoCharacter.generatePng(), name: 'Demo character');
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await _ingest(await DemoCharacter.generatePng(), name: 'Demo character');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = '$e';
+      });
+    }
   }
 
   String _nameFrom(String fileName) {
@@ -61,8 +72,15 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
   Future<void> _ingest(Uint8List bytes, {required String name}) async {
     final character =
         await ref.read(libraryProvider.notifier).createFromBytes(bytes, name: name);
-    await ref.read(editorProvider.notifier).open(character);
+    final ok = await ref.read(editorProvider.notifier).open(character);
     if (!mounted) return;
+    if (!ok) {
+      setState(() {
+        _busy = false;
+        _error = 'Import failed while decoding the image. Try a different file.';
+      });
+      return;
+    }
     setState(() => _busy = false);
     Navigator.pushReplacement(
       context,

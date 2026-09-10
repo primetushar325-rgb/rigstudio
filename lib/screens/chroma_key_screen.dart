@@ -26,6 +26,7 @@ class _ChromaKeyScreenState extends ConsumerState<ChromaKeyScreen> {
   Uint8List? _preview;
   Timer? _debounce;
   bool _rendering = false;
+  bool _pending = false; // a newer preview is queued while one renders
   bool _pickingColor = false;
 
   @override
@@ -37,11 +38,15 @@ class _ChromaKeyScreenState extends ConsumerState<ChromaKeyScreen> {
   Future<void> _initialGuess() async {
     final character = ref.read(editorProvider).character;
     if (character == null) return;
-    final bytes = await File(character.sourceImagePath).readAsBytes();
-    final guess = await ChromaKeyService.guessKeyColor(bytes);
-    ref.read(editorProvider.notifier).setChroma(
-          ref.read(editorProvider).chroma.copyWith(keyColor: guess),
-        );
+    try {
+      final bytes = await File(character.sourceImagePath).readAsBytes();
+      final guess = await ChromaKeyService.guessKeyColor(bytes);
+      ref.read(editorProvider.notifier).setChroma(
+            ref.read(editorProvider).chroma.copyWith(keyColor: guess),
+          );
+    } catch (_) {
+      // unreadable source — the user can still pick the key colour by hand
+    }
     _schedulePreview();
   }
 
@@ -51,14 +56,28 @@ class _ChromaKeyScreenState extends ConsumerState<ChromaKeyScreen> {
   }
 
   Future<void> _renderPreview() async {
-    if (_rendering) return;
+    if (_rendering) {
+      // Busy with an older frame — remember that the newest params still
+      // need rendering, then bail (the running pass re-schedules us).
+      _pending = true;
+      return;
+    }
     setState(() => _rendering = true);
-    final bytes = await ref.read(editorProvider.notifier).previewChroma();
-    if (!mounted) return;
-    setState(() {
-      _preview = bytes;
-      _rendering = false;
-    });
+    try {
+      final bytes = await ref.read(editorProvider.notifier).previewChroma();
+      if (!mounted) return;
+      setState(() {
+        _preview = bytes;
+        _rendering = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _rendering = false);
+    }
+    if (_pending && mounted) {
+      _pending = false;
+      _schedulePreview();
+    }
   }
 
   @override

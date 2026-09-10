@@ -262,32 +262,41 @@ class EditorController extends Notifier<EditorState> {
 
   // ------------------------------------------------------------------ opening
 
-  Future<void> open(Character c) async {
+  /// Loads a character into the editor. Returns false (with a visible status)
+  /// instead of throwing when its files are unreadable, so the library screen
+  /// can keep working.
+  Future<bool> open(Character c) async {
     state = EditorState(character: c, busy: true, status: 'Loading…');
-    final bytes = await File(c.cutSource).readAsBytes();
-    final image = await StorageService.decodeUiImage(bytes);
-    final parts = <String, ui.Image>{};
-    for (final b in c.skeleton?.bones ?? const <BonePart>[]) {
-      if (b.imagePath == null) continue;
-      final im = await StorageService.loadUiImageFile(b.imagePath!);
-      if (im != null) parts[b.id] = im;
+    try {
+      final bytes = await File(c.cutSource).readAsBytes();
+      final image = await StorageService.decodeUiImage(bytes);
+      final parts = <String, ui.Image>{};
+      for (final b in c.skeleton?.bones ?? const <BonePart>[]) {
+        if (b.imagePath == null) continue;
+        final im = await StorageService.loadUiImageFile(b.imagePath!);
+        if (im != null) parts[b.id] = im;
+      }
+      final props = <String, ui.Image>{};
+      for (final p in c.skeleton?.props ?? const <PropAttachment>[]) {
+        final im = await StorageService.loadUiImageFile(p.imagePath);
+        if (im != null) props[p.id] = im;
+      }
+      state = state.copyWith(
+        workingBytes: bytes,
+        workingImage: image,
+        partImages: parts,
+        propImages: props,
+        template: c.skeleton == null
+            ? RigTemplateTransform.fitTo(
+                Size(image.width.toDouble(), image.height.toDouble()))
+            : null,
+        busy: false,
+      );
+      return true;
+    } catch (_) {
+      state = state.copyWith(busy: false, status: 'Could not open "${c.name}"');
+      return false;
     }
-    final props = <String, ui.Image>{};
-    for (final p in c.skeleton?.props ?? const <PropAttachment>[]) {
-      final im = await StorageService.loadUiImageFile(p.imagePath);
-      if (im != null) props[p.id] = im;
-    }
-    state = state.copyWith(
-      workingBytes: bytes,
-      workingImage: image,
-      partImages: parts,
-      propImages: props,
-      template: c.skeleton == null
-          ? RigTemplateTransform.fitTo(
-              Size(image.width.toDouble(), image.height.toDouble()))
-          : null,
-      busy: false,
-    );
   }
 
   void close() => state = const EditorState();
@@ -313,23 +322,28 @@ class EditorController extends Notifier<EditorState> {
     final c = state.character;
     if (c == null) return;
     state = state.copyWith(busy: true, status: 'Removing background…');
-    final original = await File(c.sourceImagePath).readAsBytes();
-    final keyed = await ChromaKeyService.run(ChromaKeyRequest(original, state.chroma));
-    final path = await _storage.writeWorkingImage(c.id, keyed);
-    c.workingImagePath = path;
-    await _storage.writeThumbnail(c.id, keyed);
-    await _storage.saveCharacter(c);
-    final image = await StorageService.decodeUiImage(keyed);
-    state = state.copyWith(
-      character: c,
-      workingBytes: keyed,
-      workingImage: image,
-      busy: false,
-      status: null,
-      template: RigTemplateTransform.fitTo(
-          Size(image.width.toDouble(), image.height.toDouble())),
-    );
-    ref.read(libraryProvider.notifier).refresh();
+    try {
+      final original = await File(c.sourceImagePath).readAsBytes();
+      final keyed = await ChromaKeyService.run(ChromaKeyRequest(original, state.chroma));
+      final path = await _storage.writeWorkingImage(c.id, keyed);
+      c.workingImagePath = path;
+      await _storage.writeThumbnail(c.id, keyed);
+      await _storage.saveCharacter(c);
+      final image = await StorageService.decodeUiImage(keyed);
+      state = state.copyWith(
+        character: c,
+        workingBytes: keyed,
+        workingImage: image,
+        busy: false,
+        status: null,
+        template: RigTemplateTransform.fitTo(
+            Size(image.width.toDouble(), image.height.toDouble())),
+      );
+      ref.read(libraryProvider.notifier).refresh();
+    } catch (_) {
+      // Never leave the editor stuck behind the busy overlay.
+      state = state.copyWith(busy: false, status: 'Background removal failed');
+    }
   }
 
   Future<void> skipChroma() async {
@@ -356,32 +370,38 @@ class EditorController extends Notifier<EditorState> {
     _recordHistory();
 
     state = state.copyWith(busy: true, status: 'Cutting parts…');
-    final skeleton = buildSkeletonFromTemplate(
-      characterId: c.id,
-      canvasSize: state.canvasSize,
-      transform: t,
-    );
-    final cuts = await CutService.autoCropFromTemplate(imageBytes: bytes, transform: t);
+    try {
+      final skeleton = buildSkeletonFromTemplate(
+        characterId: c.id,
+        canvasSize: state.canvasSize,
+        transform: t,
+      );
+      final cuts = await CutService.autoCropFromTemplate(imageBytes: bytes, transform: t);
 
-    final images = <String, ui.Image>{};
-    for (final cut in cuts) {
-      final path = await _storage.writePart(c.id, cut.boneId, cut.pngBytes);
-      final bone = skeleton.byId(cut.boneId);
-      if (bone == null) continue;
-      bone.imagePath = path;
-      bone.imageRect = cut.rect;
-      images[cut.boneId] = await StorageService.decodeUiImage(cut.pngBytes);
+      final images = <String, ui.Image>{};
+      for (final cut in cuts) {
+        final path = await _storage.writePart(c.id, cut.boneId, cut.pngBytes);
+        final bone = skeleton.byId(cut.boneId);
+        if (bone == null) continue;
+        bone.imagePath = path;
+        bone.imageRect = cut.rect;
+        images[cut.boneId] = await StorageService.decodeUiImage(cut.pngBytes);
+      }
+
+      c.skeleton = skeleton;
+      await _storage.saveCharacter(c);
+      state = state.copyWith(
+        character: c,
+        partImages: images,
+        busy: false,
+        status: null,
+      );
+      ref.read(libraryProvider.notifier).refresh();
+    } catch (_) {
+      // Keep the previous (pre-cut) state and tell the user instead of
+      // freezing the screen behind the busy overlay.
+      state = state.copyWith(busy: false, status: 'Auto-cut failed — try again');
     }
-
-    c.skeleton = skeleton;
-    await _storage.saveCharacter(c);
-    state = state.copyWith(
-      character: c,
-      partImages: images,
-      busy: false,
-      status: null,
-    );
-    ref.read(libraryProvider.notifier).refresh();
   }
 
   /// Ensures a skeleton exists even before any cutting (manual-only flow).
@@ -407,29 +427,33 @@ class EditorController extends Notifier<EditorState> {
     _recordHistory();
     state = state.copyWith(busy: true, status: 'Cutting ${boneId.replaceAll('_', ' ')}…');
 
-    final cut = await CutService.lassoCrop(
-      imageBytes: bytes,
-      boneId: boneId,
-      polygon: polygon,
-    );
-    if (cut == null) {
-      state = state.copyWith(busy: false, status: 'Selection was empty');
-      return;
+    try {
+      final cut = await CutService.lassoCrop(
+        imageBytes: bytes,
+        boneId: boneId,
+        polygon: polygon,
+      );
+      if (cut == null) {
+        state = state.copyWith(busy: false, status: 'Selection was empty');
+        return;
+      }
+      final path = await _storage.writePart(c.id, boneId, cut.pngBytes);
+      final bone = c.skeleton!.byId(boneId);
+      if (bone != null) {
+        bone.imagePath = path;
+        bone.imageRect = cut.rect;
+        // Keep an existing (tuned) pivot; otherwise start at the joint end of the
+        // selection, which is the sensible default for a limb.
+        if (bone.pivot == Offset.zero) bone.pivot = cut.rect.topCenter;
+      }
+      final images = Map<String, ui.Image>.from(state.partImages);
+      images[boneId] = await StorageService.decodeUiImage(cut.pngBytes);
+      await _storage.saveCharacter(c);
+      state = state.copyWith(character: c, partImages: images, busy: false, status: null);
+      ref.read(libraryProvider.notifier).refresh();
+    } catch (_) {
+      state = state.copyWith(busy: false, status: 'Lasso cut failed — try again');
     }
-    final path = await _storage.writePart(c.id, boneId, cut.pngBytes);
-    final bone = c.skeleton!.byId(boneId);
-    if (bone != null) {
-      bone.imagePath = path;
-      bone.imageRect = cut.rect;
-      // Keep an existing (tuned) pivot; otherwise start at the joint end of the
-      // selection, which is the sensible default for a limb.
-      if (bone.pivot == Offset.zero) bone.pivot = cut.rect.topCenter;
-    }
-    final images = Map<String, ui.Image>.from(state.partImages);
-    images[boneId] = await StorageService.decodeUiImage(cut.pngBytes);
-    await _storage.saveCharacter(c);
-    state = state.copyWith(character: c, partImages: images, busy: false, status: null);
-    ref.read(libraryProvider.notifier).refresh();
   }
 
   // ------------------------------------------------------------------- layers

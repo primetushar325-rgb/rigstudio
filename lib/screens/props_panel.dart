@@ -118,6 +118,8 @@ class _PropRow extends ConsumerWidget {
               value: value.clamp(min, max),
               min: min,
               max: max,
+              // One undo step per gesture, not per slider tick.
+              onChangeStart: (_) => notifier.recordHistory(),
               onChanged: cb,
             ),
           ),
@@ -165,13 +167,19 @@ class _PropRow extends ConsumerWidget {
                 IconButton(
                   tooltip: 'Mirror',
                   icon: Icon(Icons.flip, color: prop.mirrored ? Colors.amber : Colors.white54),
-                  onPressed: () => onChanged(prop.copyWith(mirrored: !prop.mirrored)),
+                  onPressed: () {
+                    notifier.recordHistory();
+                    onChanged(prop.copyWith(mirrored: !prop.mirrored));
+                  },
                 ),
                 IconButton(
                   tooltip: 'Visibility',
                   icon: Icon(prop.visible ? Icons.visibility : Icons.visibility_off,
                       color: prop.visible ? Colors.white54 : Colors.redAccent),
-                  onPressed: () => onChanged(prop.copyWith(visible: !prop.visible)),
+                  onPressed: () {
+                    notifier.recordHistory();
+                    onChanged(prop.copyWith(visible: !prop.visible));
+                  },
                 ),
                 IconButton(
                   tooltip: 'Remove',
@@ -193,8 +201,11 @@ class _PropRow extends ConsumerWidget {
                         DropdownMenuItem(
                             value: tb.id, child: Text('${tb.label} (${tb.id})')),
                     ],
-                    onChanged: (v) =>
-                        v == null ? null : onChanged(prop.copyWith(attachedBoneId: v)),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      notifier.recordHistory();
+                      onChanged(prop.copyWith(attachedBoneId: v));
+                    },
                   ),
                 ),
               ],

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -20,7 +21,9 @@ import '../models/character.dart';
 ///   settings.json                     app settings (premium flag, defaults)
 ///
 /// Paths stored in JSON are *relative* to the documents dir, because iOS
-/// changes the sandbox container path between installs.
+/// changes the sandbox container path between installs. [absolutizePath] also
+/// rebases legacy absolute paths (from older app versions) onto the current
+/// root, so a container move can never break a saved library.
 /// ---------------------------------------------------------------------------
 class StorageService {
   StorageService._();
@@ -30,6 +33,42 @@ class StorageService {
 
   Future<Directory> get root async =>
       _root ??= await getApplicationDocumentsDirectory();
+
+  /// Test hook: pin the documents root to a temp directory.
+  @visibleForTesting
+  void debugSetRoot(Directory? dir) => _root = dir;
+
+  // --------------------------------------------------------- path migration
+
+  /// Index of the first `characters` folder inside [path], or -1.
+  static int _charactersIndex(String path) => p.split(path).indexOf('characters');
+
+  /// Converts an in-memory absolute path into the app-relative form written to
+  /// JSON (`characters/<id>/…`). Unknown absolute paths (outside our folders)
+  /// are returned unchanged so external URIs are never mangled.
+  static String relativizePath(String path, String rootPath) {
+    final i = _charactersIndex(path);
+    if (i > 0) return p.joinAll(p.split(path).skip(i));
+    if (!p.isAbsolute(path)) return path; // already relative
+    final rel = p.relative(path, from: rootPath);
+    return rel.startsWith('..') ? path : rel;
+  }
+
+  /// Resolves a path from JSON against [rootPath]. Legacy absolute paths are
+  /// rebased onto the CURRENT root (an iOS update moves the container, which
+  /// would otherwise orphan every saved character).
+  static String absolutizePath(String path, String rootPath) {
+    if (!p.isAbsolute(path)) return p.join(rootPath, path);
+    final i = _charactersIndex(path);
+    if (i > 0) return p.join(rootPath, p.joinAll(p.split(path).skip(i)));
+    return path;
+  }
+
+  static String? _relativize(String? path, String rootPath) =>
+      path == null ? null : relativizePath(path, rootPath);
+
+  static String _absolutize(String path, String rootPath) =>
+      absolutizePath(path, rootPath);
 
   Future<String> absolute(String relative) async =>
       p.join((await root).path, relative);
@@ -50,13 +89,16 @@ class StorageService {
   Future<List<Character>> loadLibrary() async {
     final dir = Directory(p.join((await root).path, 'characters'));
     if (!dir.existsSync()) return [];
+    final rootPath = (await root).path;
     final out = <Character>[];
     for (final entity in dir.listSync().whereType<Directory>()) {
       final f = File(p.join(entity.path, 'character.json'));
       if (!f.existsSync()) continue;
       try {
         final json = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
-        out.add(Character.fromJson(json));
+        final c = Character.fromJson(json);
+        _absolutizeCharacterPaths(c, rootPath);
+        out.add(c);
       } catch (_) {
         // corrupt entry — skip rather than blocking the whole library
       }
@@ -65,11 +107,47 @@ class StorageService {
     return out;
   }
 
+  /// Maps every stored path onto the current documents root, in place.
+  void _absolutizeCharacterPaths(Character c, String rootPath) {
+    c.sourceImagePath = _absolutize(c.sourceImagePath, rootPath);
+    c.workingImagePath =
+        c.workingImagePath == null ? null : _absolutize(c.workingImagePath!, rootPath);
+    c.thumbnailPath =
+        c.thumbnailPath == null ? null : _absolutize(c.thumbnailPath!, rootPath);
+    final s = c.skeleton;
+    if (s == null) return;
+    for (final b in s.bones) {
+      if (b.imagePath != null) b.imagePath = _absolutize(b.imagePath!, rootPath);
+    }
+    for (final pr in s.props) {
+      pr.imagePath = _absolutize(pr.imagePath, rootPath);
+    }
+  }
+
   Future<void> saveCharacter(Character c) async {
     final dir = await characterDir(c.id);
     c.updatedAt = DateTime.now();
+    // Serialise with app-relative paths (in-memory state stays absolute).
+    final rootPath = (await root).path;
+    final j = c.toJson()
+      ..['sourceImagePath'] = _relativize(c.sourceImagePath, rootPath)
+      ..['workingImagePath'] = _relativize(c.workingImagePath, rootPath)
+      ..['thumbnailPath'] = _relativize(c.thumbnailPath, rootPath);
+    final sk = j['skeleton'] as Map<String, dynamic>?;
+    if (sk != null) {
+      for (final b in (sk['bones'] as List).cast<Map<String, dynamic>>()) {
+        if (b['imagePath'] != null) {
+          b['imagePath'] = _relativize(b['imagePath'] as String, rootPath);
+        }
+      }
+      for (final pr in ((sk['props'] as List?) ?? const []).cast<Map<String, dynamic>>()) {
+        if (pr['imagePath'] != null) {
+          pr['imagePath'] = _relativize(pr['imagePath'] as String, rootPath);
+        }
+      }
+    }
     await File(p.join(dir.path, 'character.json'))
-        .writeAsString(jsonEncode(c.toJson()));
+        .writeAsString(jsonEncode(j));
   }
 
   Future<void> deleteCharacter(String id) async {

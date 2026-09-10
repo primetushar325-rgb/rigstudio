@@ -27,6 +27,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
   String _stage = '';
   bool _running = false;
   ExportResult? _result;
+  String? _error;
 
   @override
   void initState() {
@@ -48,27 +49,38 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
       _running = true;
       _progress = 0;
       _result = null;
+      _error = null;
     });
-    final result = await ExportService.export(
-      skeleton: skeleton,
-      images: editor.partImages,
-      propImages: editor.propImages,
-      clip: widget.clip,
-      settings: _settings,
-      characterName: editor.character?.name ?? 'character',
-      onProgress: (p, stage) {
-        if (!mounted) return;
-        setState(() {
-          _progress = p;
-          _stage = stage;
-        });
-      },
-    );
-    if (!mounted) return;
-    setState(() {
-      _running = false;
-      _result = result;
-    });
+    try {
+      final result = await ExportService.export(
+        skeleton: skeleton,
+        images: editor.partImages,
+        propImages: editor.propImages,
+        clip: widget.clip,
+        settings: _settings,
+        characterName: editor.character?.name ?? 'character',
+        onProgress: (p, stage) {
+          if (!mounted) return;
+          setState(() {
+            _progress = p;
+            _stage = stage;
+          });
+        },
+      );
+      if (!mounted) return;
+      setState(() {
+        _running = false;
+        _result = result;
+      });
+    } catch (e) {
+      // Never leave the screen stuck on the progress bar with no way back.
+      if (!mounted) return;
+      setState(() {
+        _running = false;
+        _result = null;
+        _error = 'Export failed: $e';
+      });
+    }
   }
 
   @override
@@ -173,12 +185,20 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
             LinearProgressIndicator(value: _progress),
             const SizedBox(height: 8),
             Text(_stage, style: const TextStyle(fontSize: 12, color: Colors.white54)),
-          ] else
+          ] else ...[
+            if (_error != null) ...[
+              Icon(Icons.error_outline, color: Colors.redAccent),
+              const SizedBox(height: 8),
+              Text(_error!,
+                  style: const TextStyle(fontSize: 12, color: Colors.redAccent)),
+              const SizedBox(height: 12),
+            ],
             FilledButton.icon(
               onPressed: _run,
               icon: const Icon(Icons.movie_creation_outlined),
               label: Text('Render ${_settings.frameCount} frames'),
             ),
+          ],
           if (_result != null) ...[
             const SizedBox(height: 20),
             Card(

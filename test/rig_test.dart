@@ -114,4 +114,47 @@ void main() {
       expect(c.zIndex, 5);
     });
   });
+
+  group('whole-rig mirror', () {
+    test('rotation limits survive the mirror (sign-flipped and swapped)', () {
+      final s = buildRig();
+      // Tune an ASYMMETRIC limit on the right foot (limits are final fields,
+      // so swap the bone via copyWith) and a pose on the right arm.
+      expect(s.byId('foot_r')!.minAngleRad, isNotNull);
+      final i = s.bones.indexWhere((b) => b.id == 'foot_r');
+      s.bones[i] = s.bones[i].copyWith(minAngleRad: -0.5, maxAngleRad: 0.25);
+      s.byId('upper_arm_r')!.rotation = 0.3;
+      s.byId('upper_arm_r')!.translation = const Offset(10, 4);
+
+      final m = s.mirroredRig();
+
+      // No bone may lose its clamp protection (head/feet are always limited).
+      for (final b in m.bones) {
+        if (b.id == 'torso') continue; // deliberately unbounded
+        expect(b.hasAngleLimits, isTrue, reason: '${b.id} lost its limits');
+      }
+
+      // foot_l now carries foot_r's mirrored limits: [-0.25, +0.5].
+      final footL = m.byId('foot_l')!;
+      expect(footL.minAngleRad, closeTo(-0.25, 1e-9));
+      expect(footL.maxAngleRad, closeTo(0.5, 1e-9));
+
+      // The mirrored pose: rotation and x-translation flip sign.
+      final armL = m.byId('upper_arm_l')!;
+      expect(armL.rotation, closeTo(-0.3, 1e-9));
+      expect(armL.translation, const Offset(-10, 4));
+    });
+
+    test('mirrored rig still round-trips through json', () {
+      final s = buildRig();
+      final m = s.mirroredRig();
+      final copy = Skeleton.fromJson(m.toJson());
+      for (final b in copy.bones) {
+        final orig = m.byId(b.id)!;
+        expect(b.minAngleRad, orig.minAngleRad, reason: '${b.id} limits lost');
+        expect(b.maxAngleRad, orig.maxAngleRad);
+        expect(b.rotation, orig.rotation);
+      }
+    });
+  });
 }
