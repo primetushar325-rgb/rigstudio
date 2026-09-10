@@ -118,8 +118,11 @@ class BonePart {
         'mirrored': mirrored,
         'visible': visible,
         'required': required_,
-        if (minAngleRad != null) 'minAngle': minAngleRad,
-        if (maxAngleRad != null) 'maxAngle': maxAngleRad,
+        // An infinite limit MEANS "unbounded" — jsonEncode cannot serialise
+        // ±Infinity, so omit the key (fromJson maps absence back to null ==
+        // no constraint). Writing it would crash every character save.
+        if (minAngleRad != null && minAngleRad!.isFinite) 'minAngle': minAngleRad,
+        if (maxAngleRad != null && maxAngleRad!.isFinite) 'maxAngle': maxAngleRad,
       };
 
   factory BonePart.fromJson(Map<String, dynamic> j) => BonePart(

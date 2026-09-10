@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -99,6 +100,20 @@ void main() {
       expect(head.imageRect, const Rect.fromLTWH(10, 20, 100, 120));
       expect(head.zIndex, 99);
       expect(copy.bones.length, s.bones.length);
+    });
+
+    test('template skeleton survives real JSON (torso has infinite limits)', () {
+      // defaultAngleLimits('torso') is (±∞). jsonEncode cannot serialise
+      // infinities, so toJson must omit unbounded limits — otherwise saving
+      // ANY rigged character throws and the rig is lost.
+      final s = buildRig();
+      final text = jsonEncode(s.toJson()); // must not throw
+      final back = Skeleton.fromJson(jsonDecode(text) as Map<String, dynamic>);
+      final torso = back.byId('torso')!;
+      expect(torso.minAngleRad, isNull); // unbounded stays unbounded
+      expect(torso.maxAngleRad, isNull);
+      expect(back.byId('head')!.minAngleRad, closeTo(-80 * math.pi / 180, 1e-9));
+      expect(back.byId('foot_l')!.maxAngleRad, closeTo(45 * math.pi / 180, 1e-9));
     });
 
     test('bone part copyWith keeps identity fields', () {
