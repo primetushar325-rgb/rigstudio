@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -101,6 +102,20 @@ void main() {
       expect(copy.bones.length, s.bones.length);
     });
 
+    test('template skeleton survives real JSON (torso has infinite limits)', () {
+      // defaultAngleLimits('torso') is (±∞). jsonEncode cannot serialise
+      // infinities, so toJson must omit unbounded limits — otherwise saving
+      // ANY rigged character throws and the rig is lost.
+      final s = buildRig();
+      final text = jsonEncode(s.toJson()); // must not throw
+      final back = Skeleton.fromJson(jsonDecode(text) as Map<String, dynamic>);
+      final torso = back.byId('torso')!;
+      expect(torso.minAngleRad, isNull); // unbounded stays unbounded
+      expect(torso.maxAngleRad, isNull);
+      expect(back.byId('head')!.minAngleRad, closeTo(-80 * math.pi / 180, 1e-9));
+      expect(back.byId('foot_l')!.maxAngleRad, closeTo(45 * math.pi / 180, 1e-9));
+    });
+
     test('bone part copyWith keeps identity fields', () {
       final p = BonePart(
         id: 'head',
@@ -112,6 +127,53 @@ void main() {
       expect(c.id, 'head');
       expect(c.parentId, 'torso');
       expect(c.zIndex, 5);
+    });
+  });
+
+  group('whole-rig mirror', () {
+    test('rotation limits survive the mirror (sign-flipped and swapped)', () {
+      final s = buildRig();
+      // Tune an ASYMMETRIC limit on the right foot (limits are final fields,
+      // so swap the bone via copyWith) and a pose on the right arm.
+      expect(s.byId('foot_r')!.minAngleRad, isNotNull);
+      final i = s.bones.indexWhere((b) => b.id == 'foot_r');
+      s.bones[i] = s.bones[i].copyWith(minAngleRad: -0.5, maxAngleRad: 0.25);
+      s.byId('upper_arm_r')!.rotation = 0.3;
+      s.byId('upper_arm_r')!.translation = const Offset(10, 4);
+
+      final m = s.mirroredRig();
+
+      // No bone may lose its clamp protection (head/feet are always limited).
+      for (final b in m.bones) {
+        if (b.id == 'torso') continue; // deliberately unbounded
+        expect(b.hasAngleLimits, isTrue, reason: '${b.id} lost its limits');
+      }
+
+      // foot_l now carries foot_r's mirrored limits: [-0.25, +0.5].
+      final footL = m.byId('foot_l')!;
+      expect(footL.minAngleRad, closeTo(-0.25, 1e-9));
+      expect(footL.maxAngleRad, closeTo(0.5, 1e-9));
+
+      // The mirrored pose: rotation and x-translation flip sign.
+      final armL = m.byId('upper_arm_l')!;
+      expect(armL.rotation, closeTo(-0.3, 1e-9));
+      expect(armL.translation, const Offset(-10, 4));
+    });
+
+    test('mirrored rig still round-trips through json', () {
+      final s = buildRig();
+      final m = s.mirroredRig();
+      final copy = Skeleton.fromJson(m.toJson());
+      // JSON cannot carry ±Infinity: unbounded (infinite) limits and absent
+      // (null) limits mean the same thing after a reload.
+      double? norm(double? v) => (v == null || !v.isFinite) ? null : v;
+      for (final b in copy.bones) {
+        final orig = m.byId(b.id)!;
+        expect(norm(b.minAngleRad), norm(orig.minAngleRad),
+            reason: '${b.id} limits lost');
+        expect(norm(b.maxAngleRad), norm(orig.maxAngleRad));
+        expect(b.rotation, orig.rotation);
+      }
     });
   });
 }

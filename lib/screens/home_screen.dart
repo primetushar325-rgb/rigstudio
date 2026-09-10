@@ -126,8 +126,16 @@ class _CharacterTile extends ConsumerWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () async {
-          await ref.read(editorProvider.notifier).open(character);
+          final ok = await ref.read(editorProvider.notifier).open(character);
           if (!context.mounted) return;
+          if (!ok) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text(
+                      'Could not open this character — its image files are missing.')),
+            );
+            return;
+          }
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -234,8 +242,16 @@ class _CharacterTile extends ConsumerWidget {
               title: const Text('Re-rig'),
               onTap: () async {
                 Navigator.pop(ctx);
-                await ref.read(editorProvider.notifier).open(character);
+                final ok = await ref.read(editorProvider.notifier).open(character);
                 if (!context.mounted) return;
+                if (!ok) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text(
+                            'Could not open this character — its image files are missing.')),
+                  );
+                  return;
+                }
                 Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const RigEntryScreen()));
               },

@@ -93,7 +93,10 @@ class Skeleton {
       );
     }
 
-    // 2. swap left/right payloads (bitmap + geometry) between mirrored bones
+    // 2. swap left/right payloads (bitmap + geometry) between mirrored bones.
+    //    Rotation/translation and the rotation LIMITS flip sign (a mirrored
+    //    joint bends the opposite way) so tuned poses and clamp protection
+    //    survive the mirror instead of being silently dropped.
     final result = <BonePart>[];
     for (final b in bones) {
       final swapId = swappedSideId(b.id);
@@ -106,9 +109,13 @@ class Skeleton {
         imagePath: src.imagePath,
         imageRect: src.imageRect,
         zIndex: (flipped[swapId] ?? flipped[b.id]!).zIndex,
+        rotation: -src.rotation,
+        translation: Offset(-src.translation.dx, src.translation.dy),
         mirrored: src.mirrored,
         visible: src.visible,
         required_: b.required_,
+        minAngleRad: src.maxAngleRad != null ? -src.maxAngleRad! : null,
+        maxAngleRad: src.minAngleRad != null ? -src.minAngleRad! : null,
       ));
     }
 
