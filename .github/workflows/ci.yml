@@ -35,7 +35,7 @@ jobs:
           flutter test 2>&1 | tee /tmp/test.log
           code=${PIPESTATUS[0]}
           if [ $code -ne 0 ]; then
-            msg=$(head -c 20000 /tmp/test.log | tail -c 12000 | sed 's/%/%25/g; s/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
+            msg=$(tail -c 12000 /tmp/test.log | sed 's/%/%25/g; s/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
             echo "::error title=flutter test failed::${msg}"
             exit $code
           fi
