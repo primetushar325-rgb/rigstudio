@@ -4,6 +4,7 @@ import 'package:rigstudio/data/animation_library.dart';
 import 'package:rigstudio/data/standard_rig.dart';
 import 'package:rigstudio/models/animation_clip.dart';
 import 'package:rigstudio/models/playback.dart';
+import 'package:rigstudio/models/skeleton.dart';
 import 'package:rigstudio/widgets/rig_preview.dart';
 
 Skeleton buildRig() => buildSkeletonFromTemplate(
